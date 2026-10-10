@@ -21,9 +21,29 @@ Build the package on the development/Manager machine:
 python build_agent_package.py
 ```
 
-This creates `dist/Hookah-Agent-Windows.zip`. Extract it to a folder on the other
-Windows device. The package contains the Agent, service host, dependencies,
-configuration example, installer/uninstaller, and these deployment guides.
+This creates `dist/Hookah-Agent-1.0.0.zip`. `make release` builds this ZIP after
+unit, integration, and smoke verification, alongside the Manager and combined
+release archives. Extract the Agent ZIP to its own folder on the Windows device.
+It includes the Agent, service host, dependency lists, editable configuration and
+example, foreground launchers/setup, installer/uninstaller, and deployment guides.
+
+## Foreground Agent
+
+For a console Agent, open Command Prompt or PowerShell in the extracted directory:
+
+```powershell
+.\Setup-Agent.cmd
+.\Hookah-Agent.cmd --version
+.\Hookah-Agent.cmd config show
+.\Hookah-Agent.cmd
+```
+
+Setup creates the local `.venv` and installs `requirements-agent.txt`. Supply
+`-PythonExe "C:\Program Files\Python312\python.exe"` to choose a specific Python.
+`Hookah-Agent.cmd` forwards arguments and exit status, quotes paths containing
+spaces, and uses `HOOKAH_PYTHON`, the package `.venv`, `py -3`, then `python`.
+The bundled configuration uses UDP 1161 and loopback-only manager access.
+Configure allowed LAN addresses using the CLI in `README-agent.md`.
 
 If using encryption, generate the RSA keys on the Manager as documented in
 `ENCRYPTION.md`, then explicitly transfer `manager_private.pem` to the Windows

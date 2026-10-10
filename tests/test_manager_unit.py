@@ -196,6 +196,11 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(self.clock.sleeps, [2])
         self.assertEqual(self.clock.now, 102)
 
+    def test_capture_with_no_successful_samples_is_a_runtime_error(self):
+        with self.assertRaisesRegex(RuntimeError, "without a successful sample"):
+            self.capture([RuntimeError("timeout")], interval=120, duration=1)
+        self.assertFalse(self.path.exists())
+
     def test_synchronized_capture_adapts_while_waiting(self):
         def schedule(*arguments):
             return 10 if self.clock.now < 102 else 1

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Run from any working directory, preferring the package's Python environment.
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONDONTWRITEBYTECODE=1
+if [ -n "${HOOKAH_PYTHON:-}" ]; then
+    exec "$HOOKAH_PYTHON" -B "$ROOT/snmp_data_collector_v12.py" "$@"
+elif [ -x "$ROOT/.venv/bin/python" ]; then
+    exec "$ROOT/.venv/bin/python" -B "$ROOT/snmp_data_collector_v12.py" "$@"
+else
+    exec python3 -B "$ROOT/snmp_data_collector_v12.py" "$@"
+fi

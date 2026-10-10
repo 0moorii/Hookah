@@ -1,5 +1,9 @@
 # Agent and Manager testing environment
 
+Use the source project, or `Hookah-1.0.0/source/` from the combined release ZIP.
+Standalone component ZIPs contain runtime files and deployment guides; the full
+source release supplies the tests and release builder.
+
 Python 3.10+ is required. Tests use standard-library **unittest**, PySNMP, psutil,
 cryptography, and Matplotlib for headless manager plot verification. Real integration tests
 also need Net-SNMP clients. On Debian/Ubuntu:
@@ -23,6 +27,7 @@ This creates a dedicated `.venv-test` environment using
 ```bash
 make test-unit
 make test-integration
+make smoke-test
 ```
 
 The executable runner can also be used directly:
@@ -44,6 +49,26 @@ before integration runs. It uses the Agg plot backend and a temporary Matplotlib
 cache. Agents bind dynamically selected unprivileged loopback UDP ports;
 configurations, captured CSVs, persisted settings, and PNGs are temporary.
 
+`./hookah-manager doctor` diagnoses the installed Manager's dependencies without
+starting an Agent. `smoke_test.py` starts a disposable loopback Agent and checks
+the real Manager's profile-based GET/WALK, CPU/RAM aggregation, authorized SET and
+read-back, short synchronized capture, headless plot/comparison, and remote Agent
+configuration. No listening service or device configuration is changed.
+
+## Verified release
+
+```bash
+make release
+# Equivalent, after activating the test environment:
+python -B build_release.py --output-directory dist
+```
+
+The builder runs unit and integration suites and the smoke test before writing
+the versioned Agent, Manager, and combined release ZIPs. It checks every archive's
+CRC and SHA-256 manifest and writes `dist/VALIDATION.json` plus `dist/SHA256SUMS`.
+Run `sha256sum -c SHA256SUMS` inside `dist/` to verify the standalone downloads.
+The individual runner accepts `--report PATH` to save its actual results as JSON.
+
 ## Coverage
 
 | Tests | Verified behavior |
@@ -56,6 +81,9 @@ configurations, captured CSVs, persisted settings, and PNGs are temporary.
 | `tests/test_encrypted_integration.py` | Encrypted SNMPv1/v2c GET/WALK/SET, synchronized capture, remote configuration, wire inspection, plaintext rejection, and service-loop shutdown. |
 | `tests/test_windows_service_unit.py` | Mocked native Windows service installation/lifecycle, registry configuration, paths with spaces, rotating logs, and Windows interface-data compatibility. |
 | `tests/test_extended_mib.py` | Shared tree/catalog integrity, descriptive help, disk/process/address/connection/swap/sensor/service collectors, gauges versus counters, and readable unit conversion. |
+| `tests/test_manager_cli.py` | Linux CLI/version/help/banner behavior, configuration precedence/validation, commands/defaults/overrides, dependency diagnostics, error/interrupt/EOF/pipe exit behavior, and prompt-free plots. |
+| `tests/test_release_unit.py` | Standalone/bundled payloads, runnable defaults, Windows line endings, executable modes, deterministic builds, checksum/manifest corruption detection, missing-file handling, and verification-before-packaging gates. |
+| `tests/test_launchers.py` | Linux launchers from paths with spaces/another working directory, PowerShell syntax/setup helpers, and native Windows `.cmd` launch checks when running on Windows. |
 
 Unit tests advance virtual monotonic clocks to verify exact **1**, **10**, and
 **120** second boundaries without waiting two minutes. Live integration tests

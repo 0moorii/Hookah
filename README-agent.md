@@ -1,4 +1,4 @@
-# SNMP agent for the data collector
+# Hookah Agent 1.0.0
 
 `snmp_agent.py` runs on the **device being monitored**. It collects that device's
 system information, interface traffic, CPU load, and physical-memory usage, then
@@ -30,7 +30,9 @@ on Linux.
 
 For a native **Windows 10/11 auto-start service**, use `WINDOWS-AGENT.md` and
 `windows/install-agent.ps1`. A transferable package can be built with
-`python build_agent_package.py`.
+`python build_agent_package.py`. `make release` builds the verified versioned
+Agent and Manager distributions together. The Agent ZIP includes this guide,
+its editable/default JSON profiles, shared guides, requirements, and launchers.
 
 Optional authenticated **RSA/AES-GCM** traffic encryption is documented in
 `ENCRYPTION.md`. The Manager generates the PEM keys; the Agent's configuration
@@ -42,7 +44,7 @@ and descriptive `help` commands are documented in `MIB.md`.
 
 ## Quick start on the monitored device
 
-Copy `snmp_agent.py`, `snmp_protocol.py`, `snmp_mib.py`, `snmp_cli_help.py`, `snmp_crypto.py`, `requirements-agent.txt`, and
+Copy `snmp_agent.py`, `hookah_version.py`, `snmp_protocol.py`, `snmp_mib.py`, `snmp_cli_help.py`, `snmp_crypto.py`, `requirements-agent.txt`, and
 `snmp_agent_config.json` to the device. In that directory:
 
 ```bash
@@ -54,6 +56,12 @@ chmod +x snmp_agent.py
 
 On Windows, use `py -3 -m venv .venv` and `.venv\Scripts\python.exe` for subsequent
 Python commands.
+
+The release ZIP also provides `hookah-agent` on Linux and `Hookah-Agent.cmd` on
+Windows. They select the adjacent virtual environment and load the configuration
+beside the launcher, including when invoked from another directory. On Windows,
+run `Setup-Agent.cmd` first to install the foreground Agent's dependencies.
+Both the launcher and `snmp_agent.py --version` report **1.0.0**.
 
 The supplied editable `snmp_agent_config.json` uses UDP 1161 and initially permits
 loopback queries. Configure the LAN manager without opening a text editor. For
@@ -368,7 +376,7 @@ From the directory containing these files on the monitored device:
 sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin snmp-agent
 sudo install -d /opt/snmp-python-agent
 sudo install -m 755 snmp_agent.py /opt/snmp-python-agent/
-sudo install -m 644 snmp_protocol.py snmp_mib.py snmp_cli_help.py snmp_crypto.py requirements-agent.txt /opt/snmp-python-agent/
+sudo install -m 644 hookah_version.py snmp_protocol.py snmp_mib.py snmp_cli_help.py snmp_crypto.py requirements-agent.txt /opt/snmp-python-agent/
 sudo python3 -m venv /opt/snmp-python-agent/.venv
 sudo /opt/snmp-python-agent/.venv/bin/python -m pip install -r /opt/snmp-python-agent/requirements-agent.txt
 sudo install -d -o snmp-agent -g snmp-agent -m 750 /var/lib/snmp-python-agent
@@ -395,7 +403,8 @@ Windows installation and native service commands are in `WINDOWS-AGENT.md`.
 
 ## Verification
 
-The shared Agent/Manager testing environment is documented in `TESTING.md`:
+The shared Agent/Manager testing environment is documented in `TESTING.md`.
+Use the full source project (or `source/` in the combined release ZIP):
 
 ```bash
 make setup-test

@@ -3,12 +3,15 @@
 
 import argparse
 import importlib.util
+import json
 import os
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from hookah_version import __version__
 
 
 ROOT = Path(__file__).resolve().parent
@@ -25,6 +28,7 @@ def test_cases(suite):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite", choices=("all", "unit", "integration"), default="all")
+    parser.add_argument("--report", type=Path, help="Write machine-readable results for release verification")
     args = parser.parse_args(argv)
     missing = [name for name in ("psutil", "pysnmp", "matplotlib", "cryptography") if importlib.util.find_spec(name) is None]
     if missing:
@@ -49,6 +53,18 @@ def main(argv=None):
         if selected.countTestCases() == 0:
             parser.error("No tests were discovered for the selected suite.")
         result = unittest.TextTestRunner(verbosity=2, buffer=True).run(selected)
+    if args.report:
+        report = {
+            "version": __version__, "suite": args.suite,
+            "status": "passed" if result.wasSuccessful() else "failed",
+            "tests_run": result.testsRun,
+            "failures": [str(test) for test, _ in result.failures],
+            "errors": [str(test) for test, _ in result.errors],
+            "skipped": [{"test": str(test), "reason": reason} for test, reason in result.skipped],
+            "platform": sys.platform, "python": sys.version.split()[0],
+        }
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return 0 if result.wasSuccessful() else 1
 
 

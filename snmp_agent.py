@@ -27,6 +27,7 @@ from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
 import snmp_mib as mib
+from hookah_version import __version__
 from snmp_cli_help import show_command_help
 
 from snmp_crypto import (
@@ -1246,6 +1247,7 @@ def configuration_command(args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", action="version", version=f"Hookah Agent {__version__}")
     parser.add_argument("--config", type=Path, help="Agent JSON configuration file")
     parser.add_argument("--listen-address", help="IPv4 address to bind (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, help="UDP port (default: 161; use 1161 without binding privileges)")

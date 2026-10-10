@@ -88,7 +88,7 @@ class EncryptedIntegrationTests(unittest.TestCase):
         output = self.agent.path / "encrypted.csv"
         with loopback_traffic():
             result = run_executable(
-                "snmp_data_collector_v12.py", "capture", "--target", self.agent.target,
+                "snmp_data_collector_v12.py", "--banner", "capture", "--target", self.agent.target,
                 "--community", READ_COMMUNITY, "--oid", oid, "--sync-agent", "--duration", "0.8",
                 "--output", output, "--encryption-config", self.keys["encryption_config"], cwd=self.agent.path,
             )

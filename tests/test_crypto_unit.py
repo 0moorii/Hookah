@@ -140,7 +140,7 @@ class KeyAndConfigurationTests(unittest.TestCase):
     def test_manager_key_command_prints_shisha_with_hookah_below(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            result = manager.main(["keys", "generate", "--directory", str(self.path / "manager"), "--bits", "2048"])
+            result = manager.main(["--banner", "keys", "generate", "--directory", str(self.path / "manager"), "--bits", "2048"])
         self.assertEqual(result, 0)
         text = output.getvalue()
         self.assertIn("::::", text)

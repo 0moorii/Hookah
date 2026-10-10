@@ -53,7 +53,7 @@ class RuntimeConfigurationTests(unittest.TestCase):
                     )
                     self.assert_success(result)
                     self.assertIn("Python SNMP host agent", result.stdout)
-            result = run_executable("snmp_data_collector_v12.py", cwd=agent.path, input="0\n")
+            result = run_executable("snmp_data_collector_v12.py", "interactive", cwd=agent.path, input="0\n")
             self.assert_success(result)
             self.assertIn("Goodbye", result.stdout)
 

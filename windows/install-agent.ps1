@@ -39,7 +39,7 @@ New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $DataDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $DataDirectory "keys") -Force | Out-Null
 
-$files = @("snmp_agent.py", "snmp_protocol.py", "snmp_mib.py", "snmp_cli_help.py", "snmp_crypto.py", "snmp_agent_windows_service.py", "requirements-agent.txt", "requirements-windows-agent.txt")
+$files = @("snmp_agent.py", "snmp_protocol.py", "snmp_mib.py", "snmp_cli_help.py", "snmp_crypto.py", "hookah_version.py", "snmp_agent_windows_service.py", "requirements-agent.txt", "requirements-windows-agent.txt")
 foreach ($file in $files) {
     Copy-Item -LiteralPath (Join-Path $source $file) -Destination (Join-Path $InstallDirectory $file) -Force
 }

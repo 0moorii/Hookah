@@ -54,8 +54,11 @@ Designed primarily for SNMPv1/v2c devices on a local lab network.
 import argparse
 import contextlib
 import csv
+import importlib.util
+import io
 import json
 import math
+import os
 import re
 import shutil
 import statistics
@@ -63,17 +66,21 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import snmp_mib as mib
+from hookah_version import __version__
 from snmp_cli_help import show_command_help
+from snmp_manager_config import CONFIG_NAME, ManagerConfig, initialize_manager_config, load_manager_config
 
 from snmp_protocol import collection_group_for_oid, collection_metadata_oid, oid_text
 
 
 HOOKAH_BANNER = (__doc__ or "Hookah").split("SNMP Data Collector and Plotter", 1)[0].strip("\n")
 _TRAFFIC_CIPHER = None
+_MANAGER_CONFIG = ManagerConfig()
 
 
 def configure_encryption(path=None):
@@ -107,20 +114,25 @@ def ensure_csv_suffix(filename):
     return path
 
 
-def check_dependencies():
-    missing = []
-    for command in ("snmpget", "snmpwalk", "snmpset"):
-        if shutil.which(command) is None:
-            missing.append(command)
+def snmp_tool(command):
+    search_path = str(_MANAGER_CONFIG.snmp_bin) if _MANAGER_CONFIG.snmp_bin else None
+    return shutil.which(command, path=search_path)
 
+
+def check_dependencies(commands=("snmpget", "snmpwalk", "snmpset")):
+    missing = [command for command in commands if snmp_tool(command) is None]
     if missing:
-        print("\nERROR: Net-SNMP utilities are missing:")
-        print("  " + ", ".join(missing))
-        print("\nOn Ubuntu/Debian install them with:")
-        print("  sudo apt update")
-        print("  sudo apt install snmp")
+        print("ERROR: Missing Net-SNMP utilities: " + ", ".join(missing), file=sys.stderr)
+        if sys.platform == "win32":
+            print("Install the Net-SNMP Windows command-line tools, then add their bin directory to PATH\n"
+                  "or set snmp_bin in snmp_manager_config.json (or pass --snmp-bin).", file=sys.stderr)
+        else:
+            print("Install the clients for your Linux distribution:\n"
+                  "  Debian/Ubuntu: sudo apt install snmp\n"
+                  "  Fedora/RHEL:   sudo dnf install net-snmp-utils\n"
+                  "  Arch Linux:    sudo pacman -S net-snmp\n"
+                  "  openSUSE:      sudo zypper install net-snmp", file=sys.stderr)
         return False
-
     return True
 
 
@@ -144,7 +156,9 @@ def run_command(args):
                 command_args,
                 capture_output=True,
                 text=True,
-                timeout=15,
+                encoding="utf-8",
+                errors="replace",
+                timeout=max(15, _MANAGER_CONFIG.timeout * (_MANAGER_CONFIG.retries + 1) + 5),
                 check=False,
             )
             if result.returncode != 0 and proxy is not None and proxy.last_error:
@@ -168,14 +182,17 @@ def build_common_args(command, version, community, target):
     -On  -> print OIDs numerically
     -Oa  -> print printable OCTET STRING values as ASCII where possible
     """
+    executable = snmp_tool(command) if _MANAGER_CONFIG.snmp_bin else command
+    if executable is None:
+        raise RuntimeError(f"Command not found in {_MANAGER_CONFIG.snmp_bin}: {command}")
     return [
-        command,
+        executable,
         "-v", version,
         "-c", community,
         "-On",
         "-Oa",
-        "-t", "2",
-        "-r", "1",
+        "-t", f"{_MANAGER_CONFIG.timeout:g}",
+        "-r", str(_MANAGER_CONFIG.retries),
         target,
     ]
 
@@ -303,15 +320,18 @@ def append_rows(path, fieldnames, rows):
 
 
 def prompt_connection():
-    target = input("Target IP/hostname: ").strip()
-    version = input("SNMP version [2c]: ").strip() or "2c"
+    default_target = _MANAGER_CONFIG.target or ""
+    target = input(f"Target IP/hostname [{default_target}]: ").strip() or default_target
+    if not target:
+        raise ValueError("A target IP/hostname is required.")
+    version = input(f"SNMP version [{_MANAGER_CONFIG.version}]: ").strip() or _MANAGER_CONFIG.version
 
     if version not in ("1", "2c"):
         print("This version of the program supports SNMP v1 and v2c.")
         print("Using SNMP v2c.")
         version = "2c"
 
-    community = input("Community string [public]: ").strip() or "public"
+    community = input(f"Community string [{_MANAGER_CONFIG.community}]: ").strip() or _MANAGER_CONFIG.community
     return target, version, community
 
 
@@ -1410,6 +1430,7 @@ def continuous_capture(target, version, community, oid, interval,
     update_number = 0
     announced_metric = False
     active_metric = None
+    interrupted = False
 
     try:
         while True:
@@ -1479,7 +1500,7 @@ def continuous_capture(target, version, community, oid, interval,
                     )
 
             except RuntimeError as exc:
-                print(f"[{elapsed:8.2f}s] ERROR: {exc}")
+                print(f"[{elapsed:8.2f}s] ERROR: {exc}", file=sys.stderr)
                 next_sample += interval
                 continue
 
@@ -1733,8 +1754,15 @@ def continuous_capture(target, version, community, oid, interval,
 
     except KeyboardInterrupt:
         print("\nCapture stopped by user.")
+        interrupted = True
 
-    print(f"\nSaved {sample_number} raw poll(s) to: {output_file}")
+    if not sample_number and not interrupted:
+        raise RuntimeError("Capture finished without a successful sample.")
+
+    if sample_number:
+        print(f"\nSaved {sample_number} raw poll(s) to: {output_file}")
+    else:
+        print("\nNo samples were written.")
 
     if memory_mode:
         print(
@@ -1753,6 +1781,8 @@ def continuous_capture(target, version, community, oid, interval,
             print("No counter changes were observed, so no interval-rate rows were written.")
     else:
         print("This metric is a gauge/state value, so every raw CSV row is directly plottable.")
+
+    return 130 if interrupted else 0
 
 
 
@@ -1804,20 +1834,45 @@ def print_statistics(values, label):
         print(f"Std dev: {statistics.stdev(values):.6f}")
 
 
-def plot_csv(path):
+def plot_choice(prompt, selected=None, *, interactive=True):
+    return str(selected) if selected is not None else input(prompt).strip() if interactive else ""
+
+
+def plotting_backend(headless=False):
     try:
+        import matplotlib
+        if headless:
+            matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
-    except ImportError:
-        print("\nMatplotlib is not installed.")
-        print("Ubuntu option:")
-        print("  sudo apt install python3-matplotlib")
-        print("or:")
-        print("  python3 -m pip install matplotlib")
-        return
+    except ImportError as exc:
+        raise RuntimeError("Matplotlib is missing. Install requirements-manager.txt in your Python environment.") from exc
+    return plt
+
+
+def save_plot(plt, figure, default_output, output=None, show=None, *, interactive=True, comparison=False):
+    try:
+        selected = plot_choice(f"PNG output [{default_output}]: ", output, interactive=interactive)
+        path = Path(selected).expanduser() if selected else default_output
+        if path.suffix.lower() != ".png":
+            path = path.with_suffix(".png")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(path, dpi=220, bbox_inches="tight")
+        print(f"{'Comparison' if comparison else 'Detailed'} plot saved to: {path}")
+        if show is None:
+            show = interactive and plot_choice("Open the plot window now? [Y/n]: ").lower() not in ("n", "no")
+        if show:
+            plt.show()
+        return path
+    finally:
+        plt.close(figure)
+
+
+def plot_csv(path, output=None, *, show=None, color=None, scale=None, memory_mode=None, interactive=True):
+    path = Path(path).expanduser()
+    plt = plotting_backend(show is False or (not interactive and show is not True))
 
     if not path.exists():
-        print(f"File does not exist: {path}")
-        return
+        raise FileNotFoundError(f"File does not exist: {path}")
 
     with path.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -1825,8 +1880,7 @@ def plot_csv(path):
         fieldnames = reader.fieldnames or []
 
     if not rows:
-        print("CSV file contains no data.")
-        return
+        raise RuntimeError("CSV file contains no data.")
 
     x = []
     y = []
@@ -1900,8 +1954,7 @@ def plot_csv(path):
             metric = row_metric
 
         if not y:
-            print("No usable interval-rate measurements were found.")
-            return
+            raise RuntimeError("No usable interval-rate measurements were found.")
 
         axis_label = metric.get("axis", metric.get("unit", "Rate"))
         unit = metric.get("unit", "")
@@ -1955,8 +2008,7 @@ def plot_csv(path):
             y.append(rate)
 
         if not y:
-            print("No usable legacy interval-rate data found.")
-            return
+            raise RuntimeError("No usable legacy interval-rate data found.")
 
         axis_label = "Average throughput (Mbps)"
         unit = "Mbps"
@@ -2002,15 +2054,15 @@ def plot_csv(path):
             memory_percent.append(percent)
 
         if not memory_x:
-            print("No physical-memory measurements were available to plot.")
-            return
+            raise RuntimeError("No physical-memory measurements were available to plot.")
 
         print("\nPhysical-memory graph mode")
         print("--------------------------")
         print("1. Used RAM (GiB) with 0 -> total physical RAM Y-axis")
         print("2. RAM utilization (%) with 0 -> 100% Y-axis")
         print("3. Used and free RAM (GiB) together")
-        memory_plot_choice = input("Choose [1]: ").strip() or "1"
+        memory_plot_choice = plot_choice("Choose [1]: ", {"used": "1", "percent": "2", "both": "3"}.get(memory_mode),
+                                        interactive=interactive) or "1"
 
         color_options = {
             "1": ("blue", "Blue"),
@@ -2025,7 +2077,8 @@ def plot_csv(path):
         for number, (_, display_name) in color_options.items():
             print(f"{number}. {display_name}")
 
-        color_choice = input("Choose main line color [2 = Red]: ").strip() or "2"
+        selected_color = next((number for number, (name, _) in color_options.items() if name == color), None)
+        color_choice = plot_choice("Choose main line color [2 = Red]: ", selected_color, interactive=interactive) or "2"
         line_color, line_color_name = color_options.get(
             color_choice, color_options["2"]
         )
@@ -2162,19 +2215,7 @@ def plot_csv(path):
         save_default = path.with_name(
             path.stem + "_Physical_Memory_plot.png"
         )
-        save_name = input(f"PNG output [{save_default}]: ").strip()
-        save_path = Path(save_name).expanduser() if save_name else save_default
-
-        fig.savefig(save_path, dpi=220, bbox_inches="tight")
-        print(f"Detailed plot saved to: {save_path}")
-
-        show = input("Open the plot window now? [Y/n]: ").strip().lower()
-        if show not in ("n", "no"):
-            plt.show()
-        else:
-            plt.close(fig)
-
-        return
+        return save_plot(plt, fig, save_default, output, show, interactive=interactive)
 
     # ---------------------------------------------------------------
     # Raw capture CSV (v6 or older)
@@ -2304,8 +2345,7 @@ def plot_csv(path):
                 metric = row_metric
 
             if not y:
-                print("No numeric gauge/state samples were available to plot.")
-                return
+                raise RuntimeError("No numeric gauge/state samples were available to plot.")
 
             axis_label = metric.get("axis", "SNMP value")
             unit = metric.get("unit", "")
@@ -2327,8 +2367,7 @@ def plot_csv(path):
             numeric_rows.append((i, row, value))
 
         if not numeric_rows:
-            print("No plottable numeric values were found in this CSV.")
-            return
+            raise RuntimeError("No plottable numeric values were found in this CSV.")
 
         first_row = numeric_rows[0][1]
         metric = metric_spec_for_oid(
@@ -2354,8 +2393,7 @@ def plot_csv(path):
     # Statistics and graph options
     # ---------------------------------------------------------------
     if not y:
-        print("No values were available to plot.")
-        return
+        raise RuntimeError("No values were available to plot.")
 
     kind = metric.get("kind", "gauge") if metric else "gauge"
 
@@ -2398,7 +2436,8 @@ def plot_csv(path):
     for number, (_, display_name) in color_options.items():
         print(f"{number}. {display_name}")
 
-    color_choice = input("Choose line color [2 = Red]: ").strip() or "2"
+    selected_color = next((number for number, (name, _) in color_options.items() if name == color), None)
+    color_choice = plot_choice("Choose line color [2 = Red]: ", selected_color, interactive=interactive) or "2"
     line_color, line_color_name = color_options.get(
         color_choice, color_options["2"]
     )
@@ -2412,7 +2451,8 @@ def plot_csv(path):
         print("1. Auto     - detailed scale when high/low values differ greatly")
         print("2. Linear   - normal scale")
         print("3. Detailed - symmetric-log; keeps tiny values and spikes visible")
-        scale_choice = input("Choose Y-axis mode [1 = Auto]: ").strip() or "1"
+        scale_choice = plot_choice("Choose Y-axis mode [1 = Auto]: ", {"auto": "1", "linear": "2", "symlog": "3"}.get(scale),
+                                   interactive=interactive) or "1"
 
         positive_values = [value for value in y if value > 0]
         smallest_positive = min(positive_values) if positive_values else None
@@ -2555,17 +2595,7 @@ def plot_csv(path):
         path.stem + "_" + (safe_metric_name or "plot") + ".png"
     )
 
-    save_name = input(f"PNG output [{save_default}]: ").strip()
-    save_path = Path(save_name).expanduser() if save_name else save_default
-
-    fig.savefig(save_path, dpi=220, bbox_inches="tight")
-    print(f"Detailed plot saved to: {save_path}")
-
-    show = input("Open the plot window now? [Y/n]: ").strip().lower()
-    if show not in ("n", "no"):
-        plt.show()
-    else:
-        plt.close(fig)
+    return save_plot(plt, fig, save_default, output, show, interactive=interactive)
 
 
 
@@ -2934,17 +2964,10 @@ def comparison_compatible(series_a, series_b):
     return False
 
 
-def plot_two_csv_comparison(path_a, path_b):
+def plot_two_csv_comparison(path_a, path_b, output=None, *, show=None, memory_mode=None,
+                            label_first=None, label_second=None, title=None, scale=None, interactive=True):
     """Overlay two compatible capture sessions on one graph."""
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("\nMatplotlib is not installed.")
-        print("Ubuntu option:")
-        print("  sudo apt install python3-matplotlib")
-        print("or:")
-        print("  python3 -m pip install matplotlib")
-        return
+    plt = plotting_backend(show is False or (not interactive and show is not True))
 
     # Check whether either file is a physical-memory capture before loading,
     # because memory can be compared either as GiB used or percentage used.
@@ -2964,7 +2987,6 @@ def plot_two_csv_comparison(path_a, path_b):
     memory_a = has_memory_columns(path_a)
     memory_b = has_memory_columns(path_b)
 
-    memory_mode = None
     if memory_a or memory_b:
         if not (memory_a and memory_b):
             raise RuntimeError(
@@ -2976,7 +2998,8 @@ def plot_two_csv_comparison(path_a, path_b):
         print("-------------------------------")
         print("1. Compare used RAM (GiB)")
         print("2. Compare RAM utilization (%)")
-        memory_choice = input("Choose [1]: ").strip() or "1"
+        memory_choice = plot_choice("Choose [1]: ", {"used": "1", "percent": "2"}.get(memory_mode),
+                                    interactive=interactive) or "1"
         memory_mode = "percent" if memory_choice == "2" else "used"
 
     series_a = load_comparison_series(path_a, memory_mode)
@@ -3005,11 +3028,11 @@ def plot_two_csv_comparison(path_a, path_b):
     default_label_b = series_b["path"].stem
 
     label_a = (
-        input(f"Label for line 1 [{default_label_a}]: ").strip()
+        plot_choice(f"Label for line 1 [{default_label_a}]: ", label_first, interactive=interactive)
         or default_label_a
     )
     label_b = (
-        input(f"Label for line 2 [{default_label_b}]: ").strip()
+        plot_choice(f"Label for line 2 [{default_label_b}]: ", label_second, interactive=interactive)
         or default_label_b
     )
 
@@ -3025,7 +3048,7 @@ def plot_two_csv_comparison(path_a, path_b):
     print("\nLine 1 color:")
     for number, (_, display_name) in color_options.items():
         print(f"{number}. {display_name}")
-    choice_a = input("Choose [1 = Blue]: ").strip() or "1"
+    choice_a = plot_choice("Choose [1 = Blue]: ", interactive=interactive) or "1"
     color_a, color_a_name = color_options.get(
         choice_a, color_options["1"]
     )
@@ -3033,7 +3056,7 @@ def plot_two_csv_comparison(path_a, path_b):
     print("\nLine 2 color:")
     for number, (_, display_name) in color_options.items():
         print(f"{number}. {display_name}")
-    choice_b = input("Choose [2 = Red]: ").strip() or "2"
+    choice_b = plot_choice("Choose [2 = Red]: ", interactive=interactive) or "2"
     color_b, color_b_name = color_options.get(
         choice_b, color_options["2"]
     )
@@ -3061,7 +3084,7 @@ def plot_two_csv_comparison(path_a, path_b):
         default_title = "SNMP Measurement Comparison"
 
     graph_title = (
-        input(f"Graph title [{default_title}]: ").strip()
+        plot_choice(f"Graph title [{default_title}]: ", title, interactive=interactive)
         or default_title
     )
 
@@ -3077,7 +3100,8 @@ def plot_two_csv_comparison(path_a, path_b):
         print("1. Auto")
         print("2. Linear")
         print("3. Detailed (symmetric-log)")
-        scale_choice = input("Choose [1 = Auto]: ").strip() or "1"
+        scale_choice = plot_choice("Choose [1 = Auto]: ", {"auto": "1", "linear": "2", "symlog": "3"}.get(scale),
+                                   interactive=interactive) or "1"
 
         positive_values = [v for v in all_y if v > 0]
         smallest_positive = (
@@ -3240,27 +3264,7 @@ def plot_two_csv_comparison(path_a, path_b):
     default_output = series_a["path"].with_name(
         f"{series_a['path'].stem}_VS_{series_b['path'].stem}.png"
     )
-    output_raw = input(
-        f"PNG output [{default_output}]: "
-    ).strip()
-    output_path = (
-        Path(output_raw).expanduser()
-        if output_raw
-        else default_output
-    )
-
-    fig.savefig(
-        output_path,
-        dpi=220,
-        bbox_inches="tight",
-    )
-    print(f"\nComparison plot saved to: {output_path}")
-
-    show = input("Open the plot window now? [Y/n]: ").strip().lower()
-    if show not in ("n", "no"):
-        plt.show()
-    else:
-        plt.close(fig)
+    return save_plot(plt, fig, default_output, output, show, interactive=interactive, comparison=True)
 
 
 # ---------------------------------------------------------------------------
@@ -3524,7 +3528,7 @@ def menu_capture():
     known_metric = metric_spec_for_oid(oid)
     print(f"\nExpected metric: {known_metric['name']}")
 
-    interval_raw = input("Polling interval in seconds [1]: ").strip() or "1"
+    interval_raw = input(f"Polling interval in seconds [{_MANAGER_CONFIG.interval:g}]: ").strip() or str(_MANAGER_CONFIG.interval)
     try:
         interval = positive_seconds(interval_raw)
     except ValueError:
@@ -3612,9 +3616,6 @@ def menu_compare_plots():
 
 
 def interactive_main():
-    if not check_dependencies():
-        sys.exit(1)
-
     while True:
         print("\n" + "=" * 58)
         print(" SNMP DATA COLLECTOR")
@@ -3636,6 +3637,10 @@ def interactive_main():
         choice = input("\nChoose an option: ").strip()
 
         try:
+            required_tools = {"1": ("snmpget", "snmpwalk"), "2": ("snmpwalk",), "3": ("snmpset",),
+                              "4": ("snmpget", "snmpwalk"), "11": ("snmpwalk",)}
+            if choice in required_tools and not check_dependencies(required_tools[choice]):
+                continue
             if choice == "1":
                 menu_get()
             elif choice == "2":
@@ -3681,6 +3686,8 @@ def interactive_main():
             print(f"\nSNMP ERROR: {exc}")
         except PermissionError as exc:
             print(f"\nFILE ERROR: {exc}")
+        except EOFError:
+            raise
         except Exception as exc:
             print(f"\nERROR: {exc}")
 
@@ -3712,29 +3719,90 @@ def browse_device(target, version="2c", community="public", group=None, root=Non
     return ordered
 
 
+def add_manager_options(parser, *, inherited=False):
+    default = argparse.SUPPRESS if inherited else None
+    settings = parser.add_mutually_exclusive_group()
+    settings.add_argument("--config", type=Path, default=default, help="Manager JSON profile; CLI flags override its defaults")
+    settings.add_argument("--no-config", action="store_true", default=argparse.SUPPRESS if inherited else False,
+                          help="Ignore automatic JSON/environment configuration")
+    banner = parser.add_mutually_exclusive_group()
+    banner.add_argument("--banner", dest="banner", action="store_true", default=default, help="Display the Hookah startup banner")
+    banner.add_argument("--no-banner", dest="banner", action="store_false", default=default, help="Suppress the startup banner")
+    parser.add_argument("--snmp-bin", type=Path, default=default, help="Directory containing Net-SNMP tools (useful on Windows)")
+
+
+def retry_count(value):
+    number = int(value)
+    if not 0 <= number <= 10:
+        raise ValueError("Use between 0 and 10 retries.")
+    return number
+
+
+def numeric_oid(value):
+    if not re.fullmatch(r"\.?\d+(?:\.\d+)+", value):
+        raise argparse.ArgumentTypeError("Use a numeric OID, for example .1.3.6.1.2.1.1.1.0.")
+    return value
+
+
+def add_connection_options(command):
+    command.add_argument("--target", help="Device IPv4/hostname or udp:host:port; defaults to the profile target")
+    command.add_argument("--version", choices=("1", "2c"), help="SNMP protocol version (default: profile or 2c)")
+    command.add_argument("--community", help="Read/write community (default: profile or public)")
+    command.add_argument("--timeout", type=positive_seconds, help="SNMP request timeout in seconds (default: 2)")
+    command.add_argument("--retries", type=retry_count, help="SNMP retry count, 0 through 10 (default: 1)")
+    command.add_argument("--encryption-config", type=Path, help="Optional RSA-encrypted traffic profile")
+
+
+def add_plot_options(command):
+    command.add_argument("--output", type=Path, help="PNG destination; parent directories are created automatically")
+    display = command.add_mutually_exclusive_group()
+    display.add_argument("--show", dest="show", action="store_true", help="Also open a graphical plot window")
+    display.add_argument("--no-show", dest="show", action="store_false", help="Save only (the default); works on headless Linux")
+    command.set_defaults(show=False)
+    command.add_argument("--scale", choices=("auto", "linear", "symlog"), default="auto", help="Numeric Y-axis display mode")
+
+
 def build_manager_parser():
-    parser = argparse.ArgumentParser(description="SNMP manager: interactive menu or scriptable commands.")
-    commands = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(
+        description="Hookah Manager: Linux/Windows SNMP CLI and interactive menu.",
+        epilog="No arguments opens the menu on a terminal; redirected input prints help. "
+               "Use 'interactive' explicitly for a scripted menu. Exit codes: 0=success, 1=runtime error, 2=usage error, 130=Ctrl+C.",
+    )
+    parser.add_argument("--version", action="version", version=f"Hookah Manager {__version__}")
+    add_manager_options(parser)
+    commands = parser.add_subparsers(dest="command")
     help_command = commands.add_parser("help", help="List commands/options and explain a specific topic")
     help_command.add_argument("topic", nargs="*", help="Examples: capture, mib, keys generate")
     commands.add_parser("catalog", help="List every numbered OID option, description, and platform availability")
     tree = commands.add_parser("mib", help="Display the clean shared MIB tree; optionally query live values")
     tree.add_argument("--group", choices=tuple(mib.COLLECTION_GROUPS) + ("control",), help="Filter the MIB by collection group")
-    tree.add_argument("--root", help="Filter the MIB by numeric OID subtree")
+    tree.add_argument("--root", type=numeric_oid, help="Filter the MIB by numeric OID subtree")
     browse = commands.add_parser("browse", help="Query available device metrics with readable names and units")
     browse.add_argument("--group", choices=tuple(mib.COLLECTION_GROUPS) + ("control",), help="Select a metric family")
-    browse.add_argument("--root", help="Select a numeric subtree to WALK")
-    for command, required in ((tree, False), (browse, True)):
-        command.add_argument("--target", required=required, help="Device target; omitted for an offline MIB tree")
-        command.add_argument("--version", choices=("1", "2c"), default="2c", help="SNMP protocol version (default: 2c)")
-        command.add_argument("--community", default="public", help="Read/write community string (default: public)")
-        command.add_argument("--encryption-config", type=Path, help="Optional RSA-encrypted traffic profile")
+    browse.add_argument("--root", type=numeric_oid, help="Select a numeric subtree to WALK")
+    for command in (tree, browse):
+        add_connection_options(command)
         command.add_argument("--output", type=Path, help="Save queried values as CSV")
     plot = commands.add_parser("plot", help="Plot numeric CSV values and print capture statistics")
     plot.add_argument("csv", type=Path)
+    add_plot_options(plot)
+    plot.add_argument("--color", choices=("blue", "red", "yellow", "green", "hotpink", "black"), default="red")
+    plot.add_argument("--memory-mode", choices=("used", "percent", "both"), default="used")
     compare = commands.add_parser("compare", help="Overlay two compatible CSV capture sessions")
     compare.add_argument("first", type=Path)
     compare.add_argument("second", type=Path)
+    add_plot_options(compare)
+    compare.add_argument("--memory-mode", choices=("used", "percent"), default="used")
+    compare.add_argument("--label-first", help="Legend label for the first capture")
+    compare.add_argument("--label-second", help="Legend label for the second capture")
+    compare.add_argument("--title", help="Graph title")
+    commands.add_parser("interactive", help="Open the original menu, including with piped input")
+    commands.add_parser("doctor", help="Check Python dependencies and Net-SNMP tool paths without contacting a device")
+    configuration = commands.add_parser("config", help="Initialize or inspect a Manager JSON profile")
+    config_actions = configuration.add_subparsers(dest="config_action", required=True)
+    for action in ("init", "show"):
+        command = config_actions.add_parser(action, help="Create a new profile" if action == "init" else "Show resolved profile defaults")
+        add_manager_options(command, inherited=True)
     keys = commands.add_parser("keys", help="Generate RSA keys and an encryption profile on the manager")
     key_actions = keys.add_subparsers(dest="key_action", required=True)
     generate = key_actions.add_parser("generate")
@@ -3744,11 +3812,8 @@ def build_manager_parser():
         descriptions = {"get": "Read one OID value", "walk": "Discover all OID values beneath a subtree",
                         "set": "Write an allowed OID using its SNMP type", "capture": "Poll a metric, calculate rates, and save CSV"}
         command = commands.add_parser(operation, help=descriptions[operation], description=descriptions[operation])
-        command.add_argument("--target", required=True, help="Device IPv4/hostname or udp:host:port")
-        command.add_argument("--version", choices=("1", "2c"), default="2c", help="SNMP protocol version (default: 2c)")
-        command.add_argument("--community", default="public", help="Read/write community string (default: public)")
-        command.add_argument("--oid", required=True, help="Numeric instance OID for GET/SET/capture, or subtree root for WALK")
-        command.add_argument("--encryption-config", type=Path, help="Optional RSA-encrypted traffic profile JSON")
+        add_connection_options(command)
+        command.add_argument("--oid", required=True, type=numeric_oid, help="Numeric instance OID for GET/SET/capture, or subtree root for WALK")
         if operation != "capture":
             command.add_argument("--output", type=Path, help="Optionally append results to this CSV")
         if operation == "set":
@@ -3756,17 +3821,63 @@ def build_manager_parser():
             command.add_argument("--value", required=True, help="New value to send in the SET request")
         if operation == "capture":
             command.add_argument("--output", type=Path, required=True, help="Raw sample CSV; counter rates also create an _intervals.csv file")
-            command.add_argument("--interval", type=positive_seconds, default=1.0, help="Polling interval in seconds")
+            command.add_argument("--interval", type=positive_seconds, help="Polling interval in seconds (default: profile or 1)")
             command.add_argument("--duration", type=positive_seconds, help="Capture duration in seconds; omitted means run until Ctrl+C")
-            command.add_argument("--counter-bits", choices=("auto", "32", "64"), default="auto", help="Counter-width fallback for wraparound calculations")
+            command.add_argument("--counter-bits", choices=("auto", "32", "64"), help="Counter-width fallback for wraparound calculations")
             command.add_argument("--sync-agent", action="store_true",
                                  help="Follow this agent's collection interval, including live changes")
+    for command in commands.choices.values():
+        add_manager_options(command, inherited=True)
     return parser
+
+
+def manager_config_for_args(args):
+    configuration = load_manager_config(args.config, use_defaults=not args.no_config)
+    updates = {}
+    for name in configuration.document():
+        value = getattr(args, name, None)
+        if value is not None:
+            updates[name] = value.expanduser().resolve() if isinstance(value, Path) else value
+    return replace(configuration, **updates)
+
+
+@contextlib.contextmanager
+def manager_session(configuration):
+    global _MANAGER_CONFIG, _TRAFFIC_CIPHER
+    previous = _MANAGER_CONFIG, _TRAFFIC_CIPHER
+    _MANAGER_CONFIG = configuration
+    try:
+        yield
+    finally:
+        _MANAGER_CONFIG, _TRAFFIC_CIPHER = previous
+
+
+def doctor():
+    print(f"Hookah Manager {__version__}\nPython: {sys.version.split()[0]} ({sys.executable})")
+    ready = True
+    for name in ("snmpget", "snmpwalk", "snmpset"):
+        path = snmp_tool(name)
+        print(f"{name}: {path or 'MISSING'}")
+        ready = ready and path is not None
+    for name in ("matplotlib", "cryptography"):
+        available = importlib.util.find_spec(name) is not None
+        print(f"{name}: {'available' if available else 'MISSING (install requirements-manager.txt)'}")
+        ready = ready and available
+    if not ready:
+        check_dependencies()
+    return 0 if ready else 1
 
 
 def command_line_main(argv):
     parser = build_manager_parser()
     args = parser.parse_args(argv)
+    if args.config is not None and args.no_config:
+        parser.error("--config and --no-config cannot be used together.")
+    if args.command is None:
+        parser.print_help()
+        return 0
+    if args.banner is True or (args.command == "interactive" and args.banner is not False):
+        print_banner()
     if args.command == "help":
         try:
             show_command_help(parser, args.topic)
@@ -3784,7 +3895,19 @@ def command_line_main(argv):
         if not args.target:
             return 0
     if args.command in ("plot", "compare"):
-        plot_csv(args.csv) if args.command == "plot" else plot_two_csv_comparison(args.first, args.second)
+        try:
+            if args.command == "plot":
+                plot_csv(args.csv, args.output, show=args.show, color=args.color, scale=args.scale,
+                         memory_mode=args.memory_mode, interactive=False)
+            else:
+                plot_two_csv_comparison(args.first, args.second, args.output, show=args.show, scale=args.scale,
+                                        memory_mode=args.memory_mode, label_first=args.label_first,
+                                        label_second=args.label_second, title=args.title, interactive=False)
+        except BrokenPipeError:
+            raise
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
         return 0
     if args.command == "keys":
         from snmp_crypto import generate_key_bundle
@@ -3792,35 +3915,66 @@ def command_line_main(argv):
             paths = generate_key_bundle(args.directory, args.bits)
             for name, path in paths.items():
                 print(f"{name}: {path}")
+        except BrokenPipeError:
+            raise
         except (OSError, ValueError, RuntimeError) as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
         return 0
-    if not check_dependencies():
-        return 1
     try:
-        configure_encryption(args.encryption_config)
-        if args.command in ("browse", "mib"):
-            browse_device(args.target, args.version, args.community, args.group, args.root, args.output)
+        if args.command == "config" and args.config_action == "init":
+            print(json.dumps(initialize_manager_config(args.config or Path(CONFIG_NAME)), indent=2))
             return 0
-        if args.command == "capture":
-            continuous_capture(
-                args.target, args.version, args.community, args.oid, args.interval,
-                ensure_csv_suffix(args.output),
-                counter_bits="auto" if args.counter_bits == "auto" else int(args.counter_bits),
-                duration=args.duration, sync_agent=args.sync_agent,
-            )
+        configuration = manager_config_for_args(args)
+        if args.command == "config":
+            print(json.dumps(configuration.document(), indent=2))
             return 0
-        if args.command == "get":
-            records = [snmp_get(args.target, args.version, args.community, args.oid)]
-        elif args.command == "walk":
-            records = snmp_walk(args.target, args.version, args.community, args.oid)
-        else:
-            records = [snmp_set(args.target, args.version, args.community, args.oid, args.data_type, args.value)]
-        for oid, value_type, value, _ in records:
-            print(f"{oid} = {value_type + ': ' if value_type else ''}{value}")
-        if args.output:
-            save_standard_result(ensure_csv_suffix(args.output), args.target, args.command.upper(), records)
+        with manager_session(configuration):
+            if args.command == "doctor":
+                return doctor()
+            if args.command == "interactive":
+                configure_encryption(configuration.encryption_config)
+                interactive_main()
+                return 0
+            if not configuration.target:
+                parser.error("Supply --target or set target in the Manager JSON profile.")
+            tools = {"get": ("snmpget",), "walk": ("snmpwalk",), "set": ("snmpset",),
+                     "capture": ("snmpget",), "browse": ("snmpwalk",), "mib": ("snmpwalk",)}[args.command]
+            aggregate = is_cpu_average_oid(getattr(args, "oid", "")) or is_physical_memory_auto_oid(getattr(args, "oid", ""))
+            if aggregate and args.command in ("get", "capture"):
+                tools = ("snmpget", "snmpwalk")
+            if not check_dependencies(tools):
+                return 1
+            configure_encryption(configuration.encryption_config)
+            target, version, community = configuration.target, configuration.version, configuration.community
+            if args.command in ("browse", "mib"):
+                browse_device(target, version, community, args.group, args.root, args.output)
+                return 0
+            if args.command == "capture":
+                return continuous_capture(
+                    target, version, community, args.oid, configuration.interval, ensure_csv_suffix(args.output),
+                    counter_bits="auto" if configuration.counter_bits == "auto" else int(configuration.counter_bits),
+                    duration=args.duration, sync_agent=args.sync_agent,
+                )
+            if args.command == "get":
+                if is_cpu_average_oid(args.oid):
+                    average, _, _, _ = snmp_cpu_average(target, version, community)
+                    records = [(args.oid, "AggregateGauge", f"{average:.3f}", average)]
+                elif is_physical_memory_auto_oid(args.oid):
+                    memory = get_physical_memory_snapshot(target, version, community)
+                    records = [(args.oid, "PhysicalMemoryAggregate", f"{memory['usage_percent']:.3f}", memory["usage_percent"])]
+                else:
+                    records = [snmp_get(target, version, community, args.oid)]
+            elif args.command == "walk":
+                records = snmp_walk(target, version, community, args.oid)
+            else:
+                records = [snmp_set(target, version, community, args.oid, args.data_type, args.value)]
+            for oid, value_type, value, _ in records:
+                print(f"{oid} = {value_type + ': ' if value_type else ''}{value}")
+            if args.output:
+                save_standard_result(ensure_csv_suffix(args.output), target, args.command.upper(), records)
+    except BrokenPipeError:
+        raise
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -3828,13 +3982,30 @@ def command_line_main(argv):
 
 
 def main(argv=None):
-    print_banner()
-    arguments = sys.argv[1:] if argv is None else argv
-    if arguments:
-        return command_line_main(arguments)
-    configure_encryption()
-    interactive_main()
-    return 0
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if not arguments and sys.stdin.isatty():
+        arguments = ["interactive"]
+    try:
+        status = command_line_main(arguments)
+        sys.stdout.flush()
+        return status
+    except EOFError:
+        print("\nGoodbye.")
+        return 0
+    except KeyboardInterrupt:
+        print("\nStopped by user.", file=sys.stderr)
+        return 130
+    except BrokenPipeError:
+        # Behave quietly when a Linux consumer closes a pipe early.
+        try:
+            descriptor = os.open(os.devnull, os.O_WRONLY)
+            try:
+                os.dup2(descriptor, sys.stdout.fileno())
+            finally:
+                os.close(descriptor)
+        except (OSError, ValueError, io.UnsupportedOperation):
+            pass
+        return 0
 
 
 if __name__ == "__main__":
