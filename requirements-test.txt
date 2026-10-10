@@ -1,0 +1,2 @@
+-r requirements-agent.txt
+matplotlib>=3.8,<4
