@@ -1,5 +1,14 @@
 # Hookah Manager 1.0.0
 
+## Packaged CLI entrypoints
+
+End-user ZIPs are `Hookah-Manager-Linux-1.0.0.zip` and
+`Hookah-Manager-Windows-1.0.0.zip`. They expose only `Hookah-Manager.sh` or
+`Hookah-Manager.exe`, `README.md`, `HELP.md`, and `config.json`; supporting files
+are grouped under `.hookah/`. Run the public launcher with `setup`, then use
+the same launcher for all commands. The source-project `hookah-manager` wrapper
+used in examples below is the developer equivalent.
+
 The Manager runs on the monitoring machine. It uses Net-SNMP clients to query
 the Agent or another SNMPv1/v2c device, saves CSVs, calculates counter rates,
 and plots single or compared sessions. Run `./hookah-manager help` for commands
@@ -17,27 +26,26 @@ and `snmpget`, `snmpwalk`, and `snmpset`.
 | Arch Linux | `sudo pacman -S python net-snmp` |
 | openSUSE | `sudo zypper install python3 net-snmp` |
 
-Extract `Hookah-Manager-1.0.0.zip`, enter the extracted directory, then:
+Extract `Hookah-Manager-Linux-1.0.0.zip`, enter the extracted directory, then:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements-manager.txt
-chmod +x hookah-manager snmp_data_collector_v12.py
-./hookah-manager doctor
-./hookah-manager --version
+chmod +x Hookah-Manager.sh
+./Hookah-Manager.sh setup
+./Hookah-Manager.sh doctor
+./Hookah-Manager.sh --version
 ```
 
 The launcher locates files relative to itself, so it works from another working
-directory. It prefers its adjacent `.venv`; `HOOKAH_PYTHON=/path/to/python`
-selects another interpreter. You can also activate your environment and invoke
-`python snmp_data_collector_v12.py` directly. The Python requirements include
+directory. It prefers `.hookah/environment`; `HOOKAH_PYTHON=/path/to/python`
+selects another interpreter. From the developer project, the source wrapper
+prefers `.venv`, and Python entrypoints are also available directly. Requirements include
 Matplotlib and cryptography; Net-SNMP is installed through the OS separately.
 
-Windows setup and executable `.cmd` launchers are in `WINDOWS-MANAGER.md`.
+Windows native `.exe` setup and launch commands are in `WINDOWS-MANAGER.md`.
 
 ## CLI defaults and configuration
 
-The supplied `snmp_manager_config.json` targets a local Agent on UDP 1161:
+The packaged `config.json` (or source-project `snmp_manager_config.json`) targets a local Agent on UDP 1161:
 
 ```json
 {
@@ -53,7 +61,9 @@ The supplied `snmp_manager_config.json` targets a local Agent on UDP 1161:
 }
 ```
 
-Configuration selection is: explicit `--config PATH`, then
+In an end-user package the launcher selects its adjacent `config.json`, with
+`--config PATH` and `HOOKAH_MANAGER_CONFIG` available as explicit overrides.
+For direct source-project execution, configuration selection is: explicit `--config PATH`, then
 `HOOKAH_MANAGER_CONFIG`, then `snmp_manager_config.json` in the working directory,
 then the file beside the Manager. `--no-config` uses built-in defaults and
 requires `--target` for network commands. Command flags override profile fields.

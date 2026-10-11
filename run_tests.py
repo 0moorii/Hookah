@@ -62,6 +62,8 @@ def main(argv=None):
             "errors": [str(test) for test, _ in result.errors],
             "skipped": [{"test": str(test), "reason": reason} for test, reason in result.skipped],
             "platform": sys.platform, "python": sys.version.split()[0],
+            "windows_launcher_runner": "native" if os.name == "nt" else
+                "wine" if os.environ.get("HOOKAH_WINE") or shutil.which("wine") or shutil.which("wine64") else "unavailable",
         }
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

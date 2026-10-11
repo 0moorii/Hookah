@@ -1,36 +1,30 @@
 {
   "version": "1.0.0",
   "native_windows_execution": false,
+  "windows_launcher_runner": "wine",
   "unit": {
     "version": "1.0.0",
     "suite": "unit",
     "status": "passed",
-    "tests_run": 117,
+    "tests_run": 131,
     "failures": [],
     "errors": [],
-    "skipped": [
-      {
-        "test": "test_windows_cmd_launcher_propagates_application_usage_errors (tests.test_launchers.WindowsLauncherTests.test_windows_cmd_launcher_propagates_application_usage_errors)",
-        "reason": "Native .cmd execution requires Windows"
-      },
-      {
-        "test": "test_windows_cmd_launchers_quote_paths_and_report_versions (tests.test_launchers.WindowsLauncherTests.test_windows_cmd_launchers_quote_paths_and_report_versions)",
-        "reason": "Native .cmd execution requires Windows"
-      }
-    ],
+    "skipped": [],
     "platform": "linux",
-    "python": "3.12.3"
+    "python": "3.12.3",
+    "windows_launcher_runner": "wine"
   },
   "integration": {
     "version": "1.0.0",
     "suite": "integration",
     "status": "passed",
-    "tests_run": 35,
+    "tests_run": 36,
     "failures": [],
     "errors": [],
     "skipped": [],
     "platform": "linux",
-    "python": "3.12.3"
+    "python": "3.12.3",
+    "windows_launcher_runner": "wine"
   },
   "smoke": {
     "version": "1.0.0",

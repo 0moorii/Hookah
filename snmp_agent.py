@@ -170,7 +170,7 @@ class AgentConfig:
 
 
 def read_config_document(path):
-    with path.open(encoding="utf-8") as source:
+    with path.open(encoding="utf-8-sig") as source:
         settings = json.load(source)
     if not isinstance(settings, dict):
         raise ValueError("The agent configuration must be a JSON object.")
@@ -1246,7 +1246,7 @@ def configuration_command(args):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog=os.environ.get("HOOKAH_PROGRAM_NAME"), description=__doc__)
     parser.add_argument("--version", action="version", version=f"Hookah Agent {__version__}")
     parser.add_argument("--config", type=Path, help="Agent JSON configuration file")
     parser.add_argument("--listen-address", help="IPv4 address to bind (default: 0.0.0.0)")

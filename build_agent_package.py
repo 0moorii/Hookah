@@ -13,17 +13,19 @@ ROOT = Path(__file__).resolve().parent
 PACKAGE_FILES = AGENT_FILES
 
 
-def build_package(output, source=ROOT):
-    return build_component("Agent", output, source)
+def build_package(output, source=ROOT, platform="Windows"):
+    return build_component("Agent", output, source, platform)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "dist" / f"Hookah-Agent-{__version__}.zip")
+    parser.add_argument("--platform", choices=("Linux", "Windows"), default="Windows")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
-        print(build_package(args.output))
-    except (OSError, ValueError) as exc:
+        output = args.output or ROOT / "dist" / f"Hookah-Agent-{args.platform}-{__version__}.zip"
+        print(build_package(output, platform=args.platform))
+    except (OSError, ValueError, RuntimeError) as exc:
         print(f"Packaging failed: {exc}", file=sys.stderr)
         return 1
     return 0

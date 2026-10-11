@@ -1,5 +1,15 @@
 # Hookah Agent 1.0.0
 
+## Packaged CLI entrypoints
+
+For end-user deployment, extract `Hookah-Agent-Linux-1.0.0.zip` or
+`Hookah-Agent-Windows-1.0.0.zip`. Its visible files are `Hookah-Agent.sh` or
+`Hookah-Agent.exe`, `README.md`, `HELP.md`, and `config.json`. Run the launcher
+with `setup`, then use it for every command. Code, dependencies, advanced guides,
+and service scripts are grouped under `.hookah/`. The examples below also cover
+direct use from the developer source project; in a package, replace the script
+entrypoint with the public launcher and use the visible `config.json` profile.
+
 `snmp_agent.py` runs on the **device being monitored**. It collects that device's
 system information, interface traffic, CPU load, and physical-memory usage, then
 answers SNMP requests from the manager on your local network.
@@ -57,11 +67,10 @@ chmod +x snmp_agent.py
 On Windows, use `py -3 -m venv .venv` and `.venv\Scripts\python.exe` for subsequent
 Python commands.
 
-The release ZIP also provides `hookah-agent` on Linux and `Hookah-Agent.cmd` on
-Windows. They select the adjacent virtual environment and load the configuration
-beside the launcher, including when invoked from another directory. On Windows,
-run `Setup-Agent.cmd` first to install the foreground Agent's dependencies.
-Both the launcher and `snmp_agent.py --version` report **1.0.0**.
+Packaged `Hookah-Agent.sh` and `Hookah-Agent.exe` select the private
+`.hookah/environment` and the visible `config.json`, including when invoked
+from another directory. Run the launcher with `setup` first. Both public
+launchers report **1.0.0** with `--version`.
 
 The supplied editable `snmp_agent_config.json` uses UDP 1161 and initially permits
 loopback queries. Configure the LAN manager without opening a text editor. For

@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -13,6 +14,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 from hookah_version import __version__
+from release_tools.windows import ensure_windows_launchers, inspect_pe
 
 
 ROOT = Path(__file__).resolve().parent
@@ -23,24 +25,25 @@ COMMON_FILES = (
 AGENT_FILES = COMMON_FILES + (
     "snmp_agent.py", "snmp_agent_windows_service.py", "snmp_agent_config.example.json",
     "requirements-agent.txt", "requirements-windows-agent.txt", "snmp-agent.service",
-    "README-agent.md", "WINDOWS-AGENT.md", "hookah-agent", "Hookah-Agent.cmd", "Setup-Agent.cmd",
-    "windows/setup-common.ps1", "windows/setup-agent.ps1", "windows/install-agent.ps1", "windows/uninstall-agent.ps1",
+    "README-agent.md", "WINDOWS-AGENT.md", "windows/install-agent.ps1", "windows/uninstall-agent.ps1",
 )
 MANAGER_FILES = COMMON_FILES + (
     "snmp_data_collector_v12.py", "snmp_manager_config.py", "snmp_manager_config.example.json",
     "requirements-manager.txt", "README-manager.md", "WINDOWS-MANAGER.md",
-    "hookah-manager", "Hookah-Manager.cmd", "Setup-Manager.cmd",
-    "windows/setup-common.ps1", "windows/setup-manager.ps1",
 )
 SOURCE_FILES = tuple(sorted(set(AGENT_FILES + MANAGER_FILES))) + (
     "README.md", "RELEASE.md", "Makefile", ".gitignore", "requirements-test.txt",
     "build_release.py", "build_agent_package.py", "run_tests.py", "smoke_test.py",
+    "hookah-agent", "hookah-manager", "Hookah-Agent.cmd", "Hookah-Manager.cmd", "Setup-Agent.cmd", "Setup-Manager.cmd",
+    "windows/setup-common.ps1", "windows/setup-agent.ps1", "windows/setup-manager.ps1",
 )
 EXECUTABLE_FILES = {
     "hookah-agent", "hookah-manager", "snmp_agent.py", "snmp_agent_windows_service.py",
     "snmp_data_collector_v12.py", "build_release.py", "build_agent_package.py", "run_tests.py", "smoke_test.py",
 }
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+METADATA_DIRECTORY = ".hookah/metadata"
+PLATFORMS = ("Linux", "Windows")
 
 
 def sha256(data):
@@ -62,12 +65,39 @@ def source_entries(files, source=ROOT):
     return entries
 
 
-def component_entries(component, source=ROOT):
+def render_document(name, component, platform, source=ROOT):
+    launcher = f"Hookah-{component}.{'sh' if platform == 'Linux' else 'exe'}"
+    command = ("./" if platform == "Linux" else ".\\") + launcher
+    text = (Path(source) / "release_tools" / "docs" / name).read_text(encoding="utf-8")
+    for token, value in {"@VERSION@": __version__, "@PLATFORM@": platform,
+                         "@LAUNCHER@": launcher, "@COMMAND@": command}.items():
+        text = text.replace(token, value)
+    return text.encode("utf-8")
+
+
+def component_entries(component, source=ROOT, platform="Windows"):
     if component not in ("Agent", "Manager"):
         raise ValueError("Choose the Agent or Manager component.")
-    entries = source_entries(AGENT_FILES if component == "Agent" else MANAGER_FILES, source)
+    if platform not in PLATFORMS:
+        raise ValueError("Choose the Linux or Windows platform.")
+    original = source_entries(AGENT_FILES if component == "Agent" else MANAGER_FILES, source)
+    entries = {}
+    for name, data in original.items():
+        if name.endswith(".py"):
+            destination = ".hookah/app/" + name
+        elif name.endswith(".md"):
+            destination = ".hookah/docs/" + name
+        elif name.endswith(".json"):
+            destination = ".hookah/config/" + name
+        elif name.endswith(".txt"):
+            destination = ".hookah/dependencies/" + name
+        elif name.startswith("windows/"):
+            destination = ".hookah/platform/" + name
+        else:
+            destination = ".hookah/platform/linux/" + name
+        entries[destination] = data
     template_name = "snmp_agent_config" if component == "Agent" else "snmp_manager_config"
-    configuration = json.loads(entries[template_name + ".example.json"])
+    configuration = json.loads(original[template_name + ".example.json"])
     if component == "Agent":
         configuration.update(port=1161, read_community="public", write_community=None,
                              allowed_managers=["127.0.0.1/32"], state_file=None,
@@ -75,17 +105,36 @@ def component_entries(component, source=ROOT):
     else:
         configuration.update(target="udp:127.0.0.1:1161", community="public", snmp_bin=None, encryption_config=None)
     # Ship a fresh runnable profile, rather than the developer's edited local configuration.
-    entries[template_name + ".json"] = (json.dumps(configuration, indent=2, allow_nan=False) + "\n").encode("utf-8")
-    entries["VERSION"] = (__version__ + "\n").encode("ascii")
+    entries["config.json"] = (json.dumps(configuration, indent=2, allow_nan=False) + "\n").encode("utf-8")
+    entries[".hookah/config/default.json"] = entries["config.json"]
+    entries[".hookah/launcher.py"] = (Path(source) / "release_tools" / "runtime.py").read_bytes()
+    entries[METADATA_DIRECTORY + "/VERSION"] = (__version__ + "\n").encode("ascii")
+    metadata = {"component": component, "platform": platform, "version": __version__}
+    entries[METADATA_DIRECTORY + "/component.json"] = (json.dumps(metadata, indent=2) + "\n").encode("utf-8")
+    entries["README.md"] = render_document(f"README-{component}.md", component, platform, source)
+    entries["HELP.md"] = render_document(f"HELP-{component}.md", component, platform, source)
+    if platform == "Linux":
+        launcher = f"Hookah-{component}.sh"
+        template = (Path(source) / "release_tools" / "launchers" / "linux.sh.in").read_text(encoding="utf-8")
+        entries[launcher] = template.replace("@LAUNCHER@", launcher).encode("utf-8")
+    else:
+        binary = ensure_windows_launchers(source)[component]
+        entries[f"Hookah-{component}.exe"] = binary.read_bytes()
+        inspect_pe(entries[f"Hookah-{component}.exe"])
     return entries
 
 
-def with_manifest(entries, component):
+def with_manifest(entries, component, platform=None):
     entries = dict(entries)
-    manifest = {"name": "Hookah", "component": component, "version": __version__,
+    # Explicit hidden directory entries are understood by Windows ZIP extractors.
+    for name in tuple(entries) + (METADATA_DIRECTORY + "/MANIFEST.json",):
+        for parent in PurePosixPath(name).parents:
+            if str(parent) != ".":
+                entries.setdefault(str(parent) + "/", b"")
+    manifest = {"name": "Hookah", "component": component, "version": __version__, "platform": platform, "layout_version": 2,
                 "files": {name: sha256(data) for name, data in sorted(entries.items())}}
-    entries["MANIFEST.json"] = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
-    entries["SHA256SUMS"] = "".join(f"{sha256(data)}  {name}\n" for name, data in sorted(entries.items())).encode("utf-8")
+    entries[METADATA_DIRECTORY + "/MANIFEST.json"] = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
+    entries[METADATA_DIRECTORY + "/SHA256SUMS"] = "".join(f"{sha256(data)}  {name}\n" for name, data in sorted(entries.items())).encode("utf-8")
     return entries
 
 
@@ -101,32 +150,48 @@ def verify_archive(path):
         damaged = archive.testzip()
         if damaged:
             raise ValueError(f"ZIP CRC check failed: {damaged}")
-        manifests = [name for name in names if PurePosixPath(name).name == "MANIFEST.json"]
+        manifests = [PurePosixPath(name) for name in names if name.endswith(METADATA_DIRECTORY + "/MANIFEST.json")]
+        if not manifests:
+            raise ValueError("A ZIP must contain a hidden package manifest.")
+        shallowest = min(len(path.parts) for path in manifests)
+        manifests = [path for path in manifests if len(path.parts) == shallowest]
         if len(manifests) != 1:
-            raise ValueError("A ZIP must contain exactly one manifest.")
-        manifest_path = PurePosixPath(manifests[0])
-        prefix = "" if str(manifest_path.parent) == "." else str(manifest_path.parent) + "/"
+            raise ValueError("A ZIP must contain exactly one root manifest.")
+        manifest_path = manifests[0]
+        parent = manifest_path.parents[2]
+        prefix = "" if str(parent) == "." else str(parent) + "/"
         manifest = json.loads(archive.read(str(manifest_path)))
         if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), dict):
             raise ValueError("The ZIP manifest must contain a file inventory.")
         if manifest["version"] != __version__:
             raise ValueError("ZIP release version does not match the application version.")
-        expected = {prefix + name for name in manifest["files"]} | {prefix + "MANIFEST.json", prefix + "SHA256SUMS"}
+        checksum_path = prefix + METADATA_DIRECTORY + "/SHA256SUMS"
+        expected = {prefix + name for name in manifest["files"]} | {str(manifest_path), checksum_path}
         if set(names) != expected:
             raise ValueError("ZIP contents do not match its manifest inventory.")
         for name, digest in manifest["files"].items():
             if sha256(archive.read(prefix + name)) != digest:
                 raise ValueError(f"ZIP SHA-256 check failed: {name}")
         checksums = "".join(f"{sha256(archive.read(name))}  {name[len(prefix):]}\n"
-                            for name in sorted(expected - {prefix + "SHA256SUMS"}))
-        if archive.read(prefix + "SHA256SUMS").decode("utf-8") != checksums:
+                            for name in sorted(expected - {checksum_path}))
+        if archive.read(checksum_path).decode("utf-8") != checksums:
             raise ValueError("The ZIP checksum inventory does not match its contents.")
+        if manifest.get("platform") in PLATFORMS:
+            component, platform = manifest["component"], manifest["platform"]
+            launcher = f"Hookah-{component}.{'sh' if platform == 'Linux' else 'exe'}"
+            root_files = {name[len(prefix):] for name in names if "/" not in name[len(prefix):]}
+            if root_files != {launcher, "README.md", "HELP.md", "config.json"}:
+                raise ValueError("A component ZIP must expose only its launcher, README, help, and config.")
+            if any(name.endswith(".py") and not name[len(prefix):].startswith(".hookah/") for name in names):
+                raise ValueError("Python implementation files must stay inside the support folder.")
+            if platform == "Windows":
+                inspect_pe(archive.read(prefix + launcher))
         return manifest
 
 
-def write_archive(output, entries, component, *, prefix=""):
+def write_archive(output, entries, component, *, prefix="", platform=None):
     output = Path(output).expanduser().resolve()
-    entries = with_manifest(entries, component)
+    entries = with_manifest(entries, component, platform)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
@@ -136,8 +201,13 @@ def write_archive(output, entries, component, *, prefix=""):
             for name, data in sorted(entries.items()):
                 info = zipfile.ZipInfo(prefix + name, date_time=ZIP_TIMESTAMP)
                 info.create_system = 3
-                mode = 0o755 if PurePosixPath(name).name in EXECUTABLE_FILES else 0o644
-                info.external_attr = (stat.S_IFREG | mode) << 16
+                executable = name.endswith((".sh", ".exe")) or PurePosixPath(name).name in EXECUTABLE_FILES
+                mode = 0o755 if executable or name.endswith("/") else 0o644
+                info.external_attr = ((stat.S_IFDIR if name.endswith("/") else stat.S_IFREG) | mode) << 16
+                if name.endswith("/"):
+                    info.external_attr |= 0x10
+                if ".hookah" in PurePosixPath(name).parts:
+                    info.external_attr |= 0x02
                 info.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(info, data, compresslevel=9)
         verify_archive(temporary)
@@ -148,8 +218,8 @@ def write_archive(output, entries, component, *, prefix=""):
             temporary.unlink(missing_ok=True)
 
 
-def build_component(component, output, source=ROOT):
-    return write_archive(output, component_entries(component, source), component)
+def build_component(component, output, source=ROOT, platform="Windows"):
+    return write_archive(output, component_entries(component, source, platform), component, platform=platform)
 
 
 def validate_test_reports(validation):
@@ -173,22 +243,34 @@ def build_release(output_directory, validation, source=ROOT):
     project = source_entries(SOURCE_FILES, source)
     for test in sorted((source / "tests").glob("*.py")):
         project["tests/" + test.name] = test.read_bytes()
-    agent = component_entries("Agent", source)
-    manager = component_entries("Manager", source)
+    for folder in ("release_tools", "tests/fixtures"):
+        for path in sorted((source / folder).rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts:
+                project[path.relative_to(source).as_posix()] = path.read_bytes()
+    binaries = ensure_windows_launchers(source)
+    for path in (*binaries.values(), source / "build" / "windows" / "BUILD.json"):
+        project[path.relative_to(source).as_posix()] = path.read_bytes()
+    variants = {(component, platform): component_entries(component, source, platform)
+                for component in ("Agent", "Manager") for platform in PLATFORMS}
     for name in ("snmp_agent_config.json", "snmp_manager_config.json"):
-        project[name] = (agent if name.startswith("snmp_agent") else manager)[name]
+        project[name] = variants[("Agent" if name.startswith("snmp_agent") else "Manager", "Linux")]["config.json"]
     project["VERSION"] = (__version__ + "\n").encode("ascii")
     packages = []
-    for component, entries in (("Agent", agent), ("Manager", manager)):
-        packages.append(write_archive(output_directory / f"Hookah-{component}-{__version__}.zip", entries, component))
+    for (component, platform), entries in variants.items():
+        packages.append(write_archive(output_directory / f"Hookah-{component}-{platform}-{__version__}.zip", entries, component, platform=platform))
+    # Previous download names resolve to the same clean Windows package layout.
+    for component, name in (("Agent", f"Hookah-Agent-{__version__}.zip"),
+                            ("Manager", f"Hookah-Manager-{__version__}.zip"), ("Agent", "Hookah-Agent-Windows.zip")):
+        packages.append(write_archive(output_directory / name, variants[(component, "Windows")], component, platform="Windows"))
     validation_bytes = (json.dumps(validation, indent=2) + "\n").encode("utf-8")
-    bundle = {package.name: package.read_bytes() for package in packages}
-    for name in ("README.md", "README-agent.md", "README-manager.md", "WINDOWS-AGENT.md", "WINDOWS-MANAGER.md",
-                 "ENCRYPTION.md", "MIB.md", "RELEASE.md", "TESTING.md"):
-        bundle[name] = project[name]
-    bundle["VALIDATION.json"] = validation_bytes
-    bundle["VERSION"] = project["VERSION"]
-    bundle.update({"source/" + name: data for name, data in project.items()})
+    bundle = {}
+    for (component, platform), entries in variants.items():
+        bundle.update({f"{component}/{platform}/" + name: data for name, data in with_manifest(entries, component, platform).items()})
+    bundle["README.md"] = render_document("README-Release.md", "Release", "Linux", source)
+    bundle["HELP.md"] = render_document("HELP-Release.md", "Release", "Linux", source)
+    bundle[METADATA_DIRECTORY + "/VALIDATION.json"] = validation_bytes
+    bundle[METADATA_DIRECTORY + "/VERSION"] = project["VERSION"]
+    bundle.update({".hookah/source/" + name: data for name, data in project.items()})
     packages.append(write_archive(output_directory / f"Hookah-{__version__}.zip", bundle, "Release", prefix=f"Hookah-{__version__}/"))
     (output_directory / "VALIDATION.json").write_bytes(validation_bytes)
     checksums = "".join(f"{sha256(package.read_bytes())}  {package.name}\n" for package in packages)
@@ -198,7 +280,10 @@ def build_release(output_directory, validation, source=ROOT):
 
 def run_verification(source=ROOT, python=sys.executable):
     source = Path(source).resolve()
-    reports = {"version": __version__, "native_windows_execution": sys.platform == "win32"}
+    ensure_windows_launchers(source)
+    reports = {"version": __version__, "native_windows_execution": sys.platform == "win32",
+               "windows_launcher_runner": "native" if os.name == "nt" else
+                   "wine" if os.environ.get("HOOKAH_WINE") or shutil.which("wine") or shutil.which("wine64") else "unavailable"}
     environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", MPLBACKEND="Agg", PYTHONUTF8="1")
     with tempfile.TemporaryDirectory(prefix="hookah-release-checks-") as directory:
         for suite in ("unit", "integration", "smoke"):
@@ -224,8 +309,8 @@ def main(argv=None):
         validation = run_verification(python=args.python)
         for package in build_release(args.output_directory, validation):
             print(package)
-        print(f"Release {__version__} verified; SHA256SUMS and VALIDATION.json written.")
-    except (OSError, ValueError, subprocess.SubprocessError, zipfile.BadZipFile) as exc:
+        print(f"Release {__version__} verified; grouped platform ZIPs, SHA256SUMS, and VALIDATION.json written.")
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, zipfile.BadZipFile) as exc:
         print(f"Release failed: {exc}", file=sys.stderr)
         return 1
     return 0

@@ -3764,6 +3764,7 @@ def add_plot_options(command):
 
 def build_manager_parser():
     parser = argparse.ArgumentParser(
+        prog=os.environ.get("HOOKAH_PROGRAM_NAME"),
         description="Hookah Manager: Linux/Windows SNMP CLI and interactive menu.",
         epilog="No arguments opens the menu on a terminal; redirected input prints help. "
                "Use 'interactive' explicitly for a scripted menu. Exit codes: 0=success, 1=runtime error, 2=usage error, 130=Ctrl+C.",

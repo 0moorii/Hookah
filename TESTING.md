@@ -1,6 +1,6 @@
 # Agent and Manager testing environment
 
-Use the source project, or `Hookah-1.0.0/source/` from the combined release ZIP.
+Use the source project, or `Hookah-1.0.0/.hookah/source/` from the combined release ZIP.
 Standalone component ZIPs contain runtime files and deployment guides; the full
 source release supplies the tests and release builder.
 
@@ -9,7 +9,7 @@ cryptography, and Matplotlib for headless manager plot verification. Real integr
 also need Net-SNMP clients. On Debian/Ubuntu:
 
 ```bash
-sudo apt install python3-venv snmp make
+sudo apt install python3-venv snmp make gcc-mingw-w64-x86-64
 ```
 
 ## Set up and run
@@ -39,6 +39,15 @@ source .venv-test/bin/activate
 ./run_tests.py --suite integration
 ```
 
+`make windows-launchers` compiles genuine Windows x64 console executables before
+launcher/package tests. Set `HOOKAH_WINDOWS_CC` to an explicit MinGW compiler.
+The combined source release includes the verified binary cache under
+`build/windows/`; it is reused while its source fingerprints and hashes match.
+Native Windows executable tests run on Windows or Wine. Set `HOOKAH_WINE` to
+an explicit Wine executable when it is not on PATH. Wine-related environment
+variables are inherited by the runner; `windows_launcher_runner` in validation
+reports records `native`, `wine`, or `unavailable`.
+
 On Windows, create `.venv-test` with `py -3 -m venv .venv-test`, install
 `requirements-test.txt` using `.venv-test\Scripts\python.exe -m pip`, and invoke
 the runner with that Python executable. The direct Unix shebang/executable and
@@ -49,7 +58,7 @@ before integration runs. It uses the Agg plot backend and a temporary Matplotlib
 cache. Agents bind dynamically selected unprivileged loopback UDP ports;
 configurations, captured CSVs, persisted settings, and PNGs are temporary.
 
-`./hookah-manager doctor` diagnoses the installed Manager's dependencies without
+`./Hookah-Manager.sh doctor` or `Hookah-Manager.exe doctor` diagnoses the packaged Manager's dependencies without
 starting an Agent. `smoke_test.py` starts a disposable loopback Agent and checks
 the real Manager's profile-based GET/WALK, CPU/RAM aggregation, authorized SET and
 read-back, short synchronized capture, headless plot/comparison, and remote Agent
@@ -64,7 +73,8 @@ python -B build_release.py --output-directory dist
 ```
 
 The builder runs unit and integration suites and the smoke test before writing
-the versioned Agent, Manager, and combined release ZIPs. It checks every archive's
+four platform-specific Agent/Manager ZIPs and the grouped combined release.
+It also refreshes the previous Windows ZIP aliases. It checks every archive's
 CRC and SHA-256 manifest and writes `dist/VALIDATION.json` plus `dist/SHA256SUMS`.
 Run `sha256sum -c SHA256SUMS` inside `dist/` to verify the standalone downloads.
 The individual runner accepts `--report PATH` to save its actual results as JSON.
@@ -82,8 +92,10 @@ The individual runner accepts `--report PATH` to save its actual results as JSON
 | `tests/test_windows_service_unit.py` | Mocked native Windows service installation/lifecycle, registry configuration, paths with spaces, rotating logs, and Windows interface-data compatibility. |
 | `tests/test_extended_mib.py` | Shared tree/catalog integrity, descriptive help, disk/process/address/connection/swap/sensor/service collectors, gauges versus counters, and readable unit conversion. |
 | `tests/test_manager_cli.py` | Linux CLI/version/help/banner behavior, configuration precedence/validation, commands/defaults/overrides, dependency diagnostics, error/interrupt/EOF/pipe exit behavior, and prompt-free plots. |
-| `tests/test_release_unit.py` | Standalone/bundled payloads, runnable defaults, Windows line endings, executable modes, deterministic builds, checksum/manifest corruption detection, missing-file handling, and verification-before-packaging gates. |
-| `tests/test_launchers.py` | Linux launchers from paths with spaces/another working directory, PowerShell syntax/setup helpers, and native Windows `.cmd` launch checks when running on Windows. |
+| `tests/test_release_unit.py` | Four-file public layouts, grouped/hidden support folders, runnable defaults, Windows line endings/hidden flags, executable modes, deterministic builds, real PE format/console validation, corruption detection, and packaging gates. |
+| `tests/test_launchers.py` | Linux `.sh` launchers from another directory/paths with spaces, clean help, PowerShell syntax/setup helpers, and real Windows `.exe` version/help/Unicode/quote/exit behavior on Windows or Wine. |
+| `tests/test_package_runtime.py` | Hidden environment setup, visible profile preservation/default restoration, public setup instructions, configuration forwarding, service dispatch restrictions, and Windows UTF-8 BOM support. |
+| `tests/test_packaged_integration.py` | Real grouped Agent/Manager packages communicating through their public launchers, visible-profile GET/WALK/SET, synchronized capture, headless plotting, and absence of root-level Python clutter. |
 
 Unit tests advance virtual monotonic clocks to verify exact **1**, **10**, and
 **120** second boundaries without waiting two minutes. Live integration tests

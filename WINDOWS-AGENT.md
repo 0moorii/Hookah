@@ -1,158 +1,87 @@
-# Install Hookah Agent as a Windows 10/11 service
+# Hookah Agent on Windows 10/11 x64
 
-The Agent collects Windows host metrics through psutil and runs as a native
-**Windows Service Control Manager** service. Net-SNMP utilities are needed by
-the Manager, not by the Windows Agent.
-
-## Requirements on the monitored Windows device
-
-- Windows 10 or Windows 11.
-- Python 3.10+; a system-wide, 64-bit Python 3.12 installation is recommended so
-  the service account can read the Python runtime. The installer accepts its
-  explicit `python.exe` path.
-- Administrator PowerShell for service/firewall installation.
-- Access to the Python package index to install `requirements-windows-agent.txt`.
-
-## Transfer the install package
-
-Build the package on the development/Manager machine:
-
-```bash
-python build_agent_package.py
-```
-
-This creates `dist/Hookah-Agent-1.0.0.zip`. `make release` builds this ZIP after
-unit, integration, and smoke verification, alongside the Manager and combined
-release archives. Extract the Agent ZIP to its own folder on the Windows device.
-It includes the Agent, service host, dependency lists, editable configuration and
-example, foreground launchers/setup, installer/uninstaller, and deployment guides.
+Extract `Hookah-Agent-Windows-1.0.0.zip` into its own directory. The visible files
+are **Hookah-Agent.exe**, **README.md**, **HELP.md**, and **config.json**. Python
+code, dependency lists, service integration, and detailed documentation live
+under the hidden `.hookah/` support tree.
 
 ## Foreground Agent
 
-For a console Agent, open Command Prompt or PowerShell in the extracted directory:
+Install **Python 3.10+**, then in PowerShell:
 
 ```powershell
-.\Setup-Agent.cmd
-.\Hookah-Agent.cmd --version
-.\Hookah-Agent.cmd config show
-.\Hookah-Agent.cmd
+.\Hookah-Agent.exe setup
+.\Hookah-Agent.exe --version
+.\Hookah-Agent.exe --help
+.\Hookah-Agent.exe config show
+.\Hookah-Agent.exe
 ```
 
-Setup creates the local `.venv` and installs `requirements-agent.txt`. Supply
-`-PythonExe "C:\Program Files\Python312\python.exe"` to choose a specific Python.
-`Hookah-Agent.cmd` forwards arguments and exit status, quotes paths containing
-spaces, and uses `HOOKAH_PYTHON`, the package `.venv`, `py -3`, then `python`.
-The bundled configuration uses UDP 1161 and loopback-only manager access.
-Configure allowed LAN addresses using the CLI in `README-agent.md`.
+Setup creates `.hookah\environment` and installs the Agent dependencies. The
+native x64 console launcher prefers `HOOKAH_PYTHON`, its private environment,
+`py -3`, then `python`. It forwards arguments and exit status and handles spaces,
+Unicode, quotes, and trailing backslashes. Version/help work before Python setup.
 
-If using encryption, generate the RSA keys on the Manager as documented in
-`ENCRYPTION.md`, then explicitly transfer `manager_private.pem` to the Windows
-device for the installer to copy into its configured key directory.
-
-## Install and activate
-
-Open **administrator PowerShell**, enter the extracted directory, then run:
+The visible `config.json` initially uses UDP 1161 and loopback-only Manager
+access. Set `allowed_managers` to include the actual LAN Manager's address/CIDR.
+Sampling commands use the same executable:
 
 ```powershell
-.\windows\install-agent.ps1 `
+.\Hookah-Agent.exe config set --interval ifInOctets 120
+.\Hookah-Agent.exe config set --sample-interval 10
+.\Hookah-Agent.exe config show
+```
+
+Sampling reloads live. Listening, key, community, and Manager-access changes
+take effect after restarting. The foreground Agent needs no administrator
+privileges when using UDP 1161. Net-SNMP clients are needed on the Manager,
+while the Agent uses its Python protocol implementation.
+
+## Native auto-start service
+
+Use a system-wide Python installation readable by the service account.
+Open **administrator PowerShell** in the extracted package directory:
+
+```powershell
+.\Hookah-Agent.exe service install `
     -PythonExe "C:\Program Files\Python312\python.exe" `
-    -ManagerAddresses @("192.168.1.10/32", "127.0.0.1/32") `
-    -Port 1161 `
-    -SampleInterval 1 `
-    -ReadCommunity public `
-    -WriteCommunity lab-write
+    -ManagerAddresses "192.168.1.10/32,127.0.0.1/32" `
+    -Port 1161 -SampleInterval 1 -ReadCommunity public -WriteCommunity lab-write
 ```
 
-For RSA-encrypted traffic, supply the transferred private PEM:
+The service installer creates grouped `.hookah\app`, `.hookah\dependencies`,
+and `.hookah\environment` folders under `C:\Program Files\Hookah Agent`. It
+installs pywin32, gives LocalService access, creates the persistent profile at
+`C:\ProgramData\Hookah\Agent\snmp_agent_config.json`, configures a restricted
+inbound UDP firewall rule, and starts **HookahSnmpAgent** with automatic startup
+and restart-on-failure.
 
-```powershell
-.\windows\install-agent.ps1 `
-    -PythonExe "C:\Program Files\Python312\python.exe" `
-    -ManagerAddresses @("192.168.1.10/32", "127.0.0.1/32") `
-    -Port 1161 -SampleInterval 1 `
-    -ReadCommunity public -WriteCommunity lab-write `
-    -RsaPrivateKey "C:\Downloads\manager_private.pem"
-```
-
-Replace the manager IP, communities, and paths. `SampleInterval` is seconds:
-`120` means two minutes. Optional `-PeerPublicKey` supplies a separate peer's
-public PEM; the shared-key setup derives the public key from the private PEM.
-
-The installer:
-
-1. Copies application files to `C:\Program Files\Hookah Agent`.
-2. Creates a dedicated `.venv` and installs psutil, PySNMP, cryptography, and
-   pywin32.
-3. Creates/updates the JSON configuration under
-   `C:\ProgramData\Hookah\Agent\snmp_agent_config.json` using the Agent CLI.
-4. Copies an explicitly supplied RSA key and configures its file path.
-5. Gives the service's **LocalService** account access to the application/data
-   directories.
-6. Adds an inbound UDP firewall rule limited to the supplied manager addresses.
-7. Registers **HookahSnmpAgent** with automatic startup and restart-on-failure,
-   then starts it.
-
-The service uses its virtualenv's `python.exe` directly and registers a native
-SCM dispatcher. It does not depend on the virtualenv's `pythonservice.exe`
-bootstrap/DLL lookup. Application paths containing spaces are quoted.
-
-## Check and manage the service
+Optional `-RsaPrivateKey PATH` and `-PeerPublicKey PATH` configure explicitly
+transferred encryption keys. Sample intervals are numeric seconds.
 
 ```powershell
 Get-Service HookahSnmpAgent
-Start-Service HookahSnmpAgent
-Stop-Service HookahSnmpAgent
 Restart-Service HookahSnmpAgent
 Get-Content "C:\ProgramData\Hookah\Agent\logs\agent.log" -Tail 50
+.\Hookah-Agent.exe config set `
+    --config "C:\ProgramData\Hookah\Agent\snmp_agent_config.json" --interval cpu 10
 ```
 
-Logs rotate at 2 MiB with three backups. Startup/service errors are also written
-to the Windows Application event log.
-
-The native service CLI is available through its installed Python:
+The service profile is separate from the portable foreground `config.json`.
+Logs rotate at 2 MiB with three backups. SCM diagnostics are also written to
+the Windows Application event log. For removal, run in administrator PowerShell:
 
 ```powershell
-$python = "C:\Program Files\Hookah Agent\.venv\Scripts\python.exe"
-$service = "C:\Program Files\Hookah Agent\snmp_agent_windows_service.py"
-& $python $service status
-& $python $service restart
+.\Hookah-Agent.exe service uninstall
 ```
 
-## Change collection periods without an editor
+This removes the service and its firewall rule, retaining application/data files.
+In the developer source tree, the PowerShell installer/uninstaller are also
+available directly under `windows/`.
 
-```powershell
-$python = "C:\Program Files\Hookah Agent\.venv\Scripts\python.exe"
-$agent = "C:\Program Files\Hookah Agent\snmp_agent.py"
-$config = "C:\ProgramData\Hookah\Agent\snmp_agent_config.json"
-& $python $agent config set --config $config --interval ifInOctets 120
-& $python $agent config set --config $config --sample-interval 10
-& $python $agent config show --config $config
-```
+## Verification
 
-Sampling changes reload live. The Agent service stays running during a
-120-second collection period and notices configuration changes promptly. Stop
-requests also wake the service loop promptly. Key/listening/community changes
-take effect on restart.
-
-For changes from the Manager device, use the remote CLI in `README-agent.md`,
-adding the encryption profile from `ENCRYPTION.md` when encrypted transport is
-enabled. A Manager can run on Linux or another machine with Net-SNMP installed.
-
-## Remove the service
-
-From the extracted package directory, in administrator PowerShell:
-
-```powershell
-.\windows\uninstall-agent.ps1
-```
-
-This stops/removes the service and its firewall rule. Application files,
-configuration, keys, persisted metadata, and logs are retained.
-
-## Platform verification
-
-The automated tests verify Windows-style interface data, mocked SCM/registry
-install/start/stop/remove operations, quoted service commands, and real Agent
-shutdown through the service stop event. PowerShell installers are syntax-checked.
-Actual SCM activation must be checked on the target Windows 10/11 device using
-the status/log commands above; the development test host is Linux.
+Automated tests cover real Windows console launcher behavior on Windows/Wine,
+PowerShell syntax, Windows-style collectors, mocked SCM/registry operations,
+quoted service paths, and stop-event lifecycle behavior. Native SCM deployment
+is checked on the target Windows system with the status/log commands above.

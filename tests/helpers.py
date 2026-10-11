@@ -47,7 +47,7 @@ def run_executable(name, *arguments, cwd=None, input=None, timeout=15):
 
 class RunningAgent:
     def __init__(self, write_community=WRITE_COMMUNITY, sample_interval=0.15, collection_intervals=None,
-                 encryption=None):
+                 encryption=None, launcher=None):
         self.directory = tempfile.TemporaryDirectory(prefix="snmp-agent-test-")
         self.path = Path(self.directory.name)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
@@ -73,14 +73,15 @@ class RunningAgent:
             self.encryption_config.write_text(json.dumps(encryption), encoding="utf-8")
             self.cipher = RsaEnvelope.from_settings(EncryptionSettings.from_document(encryption))
         self.process = None
+        self.launcher = Path(launcher) if launcher else None
 
     def start(self):
-        command = [str(ROOT / "snmp_agent.py"), "--config", str(self.config_file)]
-        if os.name == "nt":
+        command = [str(self.launcher or ROOT / "snmp_agent.py"), "--config", str(self.config_file)]
+        if os.name == "nt" and self.launcher is None:
             command.insert(0, sys.executable)
         self.process = subprocess.Popen(
             command,
-            cwd=self.path, env=executable_environment(),
+            cwd=self.path, env=dict(executable_environment(), HOOKAH_PYTHON=sys.executable),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
         deadline = time.monotonic() + 10

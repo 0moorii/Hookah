@@ -16,6 +16,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $source = Split-Path $PSScriptRoot -Parent
+$dependencies = $source
+if (-not (Test-Path -LiteralPath (Join-Path $source "snmp_agent.py"))) {
+    $support = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $source = Join-Path $support "app"
+    $dependencies = Join-Path $support "dependencies"
+}
+$ManagerAddresses = @($ManagerAddresses | ForEach-Object { $_ -split "," } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if (-not $ManagerAddresses.Count) { throw "Supply at least one Manager address or CIDR." }
 
 function Invoke-Checked {
     param([string]$Executable, [string[]]$Arguments)
@@ -36,20 +44,29 @@ if (Get-Service -Name HookahSnmpAgent -ErrorAction SilentlyContinue) {
 $resolvedPython = (Get-Command $PythonExe -ErrorAction Stop).Source
 Invoke-Checked $resolvedPython @("-c", "import sys; assert sys.version_info >= (3, 10), 'Python 3.10+ required'")
 New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
+$installedSupport = Join-Path $InstallDirectory ".hookah"
+$applicationDirectory = Join-Path $installedSupport "app"
+$dependencyDirectory = Join-Path $installedSupport "dependencies"
+New-Item -ItemType Directory -Path $applicationDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $dependencyDirectory -Force | Out-Null
+(Get-Item -LiteralPath $installedSupport -Force).Attributes = (Get-Item -LiteralPath $installedSupport -Force).Attributes -bor [IO.FileAttributes]::Hidden
 New-Item -ItemType Directory -Path $DataDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $DataDirectory "keys") -Force | Out-Null
 
-$files = @("snmp_agent.py", "snmp_protocol.py", "snmp_mib.py", "snmp_cli_help.py", "snmp_crypto.py", "hookah_version.py", "snmp_agent_windows_service.py", "requirements-agent.txt", "requirements-windows-agent.txt")
+$files = @("snmp_agent.py", "snmp_protocol.py", "snmp_mib.py", "snmp_cli_help.py", "snmp_crypto.py", "hookah_version.py", "snmp_agent_windows_service.py")
 foreach ($file in $files) {
-    Copy-Item -LiteralPath (Join-Path $source $file) -Destination (Join-Path $InstallDirectory $file) -Force
+    Copy-Item -LiteralPath (Join-Path $source $file) -Destination (Join-Path $applicationDirectory $file) -Force
+}
+foreach ($file in @("requirements-agent.txt", "requirements-windows-agent.txt")) {
+    Copy-Item -LiteralPath (Join-Path $dependencies $file) -Destination (Join-Path $dependencyDirectory $file) -Force
 }
 
-$venv = Join-Path $InstallDirectory ".venv"
+$venv = Join-Path $installedSupport "environment"
 Invoke-Checked $resolvedPython @("-m", "venv", $venv)
 $servicePython = Join-Path $venv "Scripts\python.exe"
-$agent = Join-Path $InstallDirectory "snmp_agent.py"
-$service = Join-Path $InstallDirectory "snmp_agent_windows_service.py"
-Invoke-Checked $servicePython @("-m", "pip", "install", "-r", (Join-Path $InstallDirectory "requirements-windows-agent.txt"))
+$agent = Join-Path $applicationDirectory "snmp_agent.py"
+$service = Join-Path $applicationDirectory "snmp_agent_windows_service.py"
+Invoke-Checked $servicePython @("-m", "pip", "install", "-r", (Join-Path $dependencyDirectory "requirements-windows-agent.txt"))
 
 $configuration = Join-Path $DataDirectory "snmp_agent_config.json"
 if (-not (Test-Path -LiteralPath $configuration)) {
@@ -60,7 +77,7 @@ Invoke-Checked $servicePython @($agent, "config", "set", "--config", $configurat
 
 # Set arrays through Python argv to avoid PowerShell 5.1 native JSON quoting.
 $setManagers = "import sys; from pathlib import Path; from snmp_agent import update_config_file; update_config_file(Path(sys.argv[1]), {'read_community': sys.argv[2], 'allowed_managers': sys.argv[3:]})"
-Push-Location $InstallDirectory
+Push-Location $applicationDirectory
 try {
     Invoke-Checked $servicePython (@("-c", $setManagers, $configuration, $ReadCommunity) + $ManagerAddresses)
 } finally {
@@ -68,7 +85,7 @@ try {
 }
 if ($WriteCommunity) {
     $setWrite = "import sys; from pathlib import Path; from snmp_agent import update_config_file; update_config_file(Path(sys.argv[1]), {'write_community': sys.argv[2]})"
-    Push-Location $InstallDirectory
+    Push-Location $applicationDirectory
     try { Invoke-Checked $servicePython @("-c", $setWrite, $configuration, $WriteCommunity) }
     finally { Pop-Location }
 }
