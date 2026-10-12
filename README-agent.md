@@ -5,7 +5,8 @@
 For end-user deployment, extract `Hookah-Agent-Linux-1.0.0.zip` or
 `Hookah-Agent-Windows-1.0.0.zip`. Its visible files are `Hookah-Agent.sh` or
 `Hookah-Agent.exe`, `README.md`, `HELP.md`, and `config.json`. Run the launcher
-with `setup`, then use it for every command. Code, dependencies, advanced guides,
+directly after extraction; portable Python and the installed dependencies are
+included. `setup` is only an optional offline check. Code, dependencies, advanced guides,
 and service scripts are grouped under `.hookah/`. The examples below also cover
 direct use from the developer source project; in a package, replace the script
 entrypoint with the public launcher and use the visible `config.json` profile.
@@ -69,7 +70,7 @@ Python commands.
 
 Packaged `Hookah-Agent.sh` and `Hookah-Agent.exe` select the private
 `.hookah/environment` and the visible `config.json`, including when invoked
-from another directory. Run the launcher with `setup` first. Both public
+from another directory. No dependency installation is needed. Both public
 launchers report **1.0.0** with `--version`.
 
 The supplied editable `snmp_agent_config.json` uses UDP 1161 and initially permits

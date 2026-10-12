@@ -339,7 +339,8 @@ def optional_psutil(name, *args, default=None, **kwargs):
         return default
     try:
         return function(*args, **kwargs)
-    except (psutil.Error, OSError, NotImplementedError):
+    except (psutil.Error, OSError, NotImplementedError, RuntimeError) as exc:
+        LOGGER.debug("Optional collector %s unavailable: %s", name, exc)
         return default
 
 
@@ -577,12 +578,23 @@ class HostMetrics:
 
     def _collect_interfaces(self, groups, now):
         collected = {group: {} for group in groups}
-        counters = psutil.net_io_counters(pernic=True, nowrap=True) or {}
-        statistics = psutil.net_if_stats() if "interfaces" in groups else {}
-        addresses = psutil.net_if_addrs() if "interfaces" in groups else {}
+        results = {}
+        operations = [("net_io_counters", {"pernic": True, "nowrap": True})]
+        if "interfaces" in groups:
+            operations.extend((("net_if_stats", {}), ("net_if_addrs", {})))
+        for name, options in operations:
+            try:
+                results[name] = getattr(psutil, name)(**options)
+            except (OSError, RuntimeError, NotImplementedError, psutil.Error) as exc:
+                # Missing OS network APIs are not missing Python dependencies.
+                LOGGER.debug("Optional interface collector %s unavailable: %s", name, exc)
+                results[name] = None
+        counters = results.get("net_io_counters") or {}
+        statistics = results.get("net_if_stats") or {}
+        addresses = results.get("net_if_addrs") or {}
         names = set(statistics) | set(addresses) | set(counters)
         self._assign_interface_indexes(names)
-        if "interfaces" in groups:
+        if "interfaces" in groups and any(result is not None for result in results.values()):
             collected["interfaces"][(1, 3, 6, 1, 2, 1, 2, 1, 0)] = rfc1902.Integer32(len(names))
         for name in sorted(names):
             index = self.interface_indexes[name]
@@ -829,7 +841,7 @@ class HostMetrics:
         snapshot = {}
         try:
             load_averages = psutil.getloadavg()
-        except (AttributeError, NotImplementedError, OSError):
+        except (AttributeError, NotImplementedError, OSError, RuntimeError):
             load_averages = ()
         for index, load in enumerate(load_averages, start=1):
             snapshot[UCD + (10, 1, 1, index)] = rfc1902.Integer32(index)

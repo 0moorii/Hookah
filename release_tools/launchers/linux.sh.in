@@ -14,4 +14,4 @@ else
     printf '%s\n' 'Python 3.10+ is required. Install Python, then run @LAUNCHER@ setup.' >&2
     exit 127
 fi
-exec "$PYTHON" -B "$ROOT/.hookah/launcher.py" "$@"
+exec "$PYTHON" -I -X utf8 -B "$ROOT/.hookah/launcher.py" "$@"

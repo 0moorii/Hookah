@@ -23,7 +23,10 @@ def package_metadata(root):
 
 def environment_python(root):
     environment = root / ".hookah" / "environment"
-    return environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if os.name == "nt":
+        bundled = environment / "python.exe"
+        return bundled if bundled.is_file() else environment / "Scripts/python.exe"
+    return environment / "bin/python"
 
 
 def app_command(root, component, arguments, python=None):
@@ -38,13 +41,15 @@ def app_command(root, component, arguments, python=None):
     runner = ("import runpy,sys; from pathlib import Path; entry=sys.argv.pop(1); "
               "sys.path.insert(0,str(Path(entry).parent)); sys.argv[0]=entry; "
               "runpy.run_path(entry,run_name='__main__')")
-    return [str(python or sys.executable), "-B", "-c", runner, str(entrypoint), *arguments]
+    return [str(python or sys.executable), "-I", "-X", "utf8", "-B", "-c", runner, str(entrypoint), *arguments]
 
 
 def runtime_environment(root, launcher):
     environment = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1",
                        HOOKAH_PROGRAM_NAME=launcher)
     environment.setdefault("HOOKAH_MANAGER_CONFIG", str(root / "config.json"))
+    if package_metadata(root)["component"] == "Manager":
+        environment.setdefault("HOOKAH_SNMP_BACKEND", "python")
     return environment
 
 
@@ -58,17 +63,22 @@ def create_environment(location):
 
 
 def setup(root, component, launcher, arguments):
-    parser = argparse.ArgumentParser(prog=launcher + " setup", description="Install private runtime dependencies inside .hookah.")
+    parser = argparse.ArgumentParser(prog=launcher + " setup", description="Verify the bundled offline runtime and configure optional defaults.")
     if component == "Manager":
         parser.add_argument("--snmp-bin", type=Path, help="Directory containing Net-SNMP command-line clients")
     args = parser.parse_args(arguments)
     location = root / ".hookah" / "environment"
-    print("Preparing the Hookah environment...", flush=True)
+    bundled = (root / ".hookah" / "metadata" / "BUNDLE.json").is_file()
+    print("Checking the bundled Hookah environment..." if bundled else "Preparing the Hookah environment...", flush=True)
     python = environment_python(root)
-    if not python.is_file():
-        create_environment(location)
-    requirements = root / ".hookah" / "dependencies" / f"requirements-{component.lower()}.txt"
-    subprocess.run([str(python), "-m", "pip", "install", "-r", str(requirements)], check=True)
+    if bundled:
+        if not python.is_file():
+            raise RuntimeError("The bundled runtime is incomplete. Extract a fresh copy of the full ZIP.")
+    else:
+        if not python.is_file():
+            create_environment(location)
+        requirements = root / ".hookah" / "dependencies" / f"requirements-{component.lower()}.txt"
+        subprocess.run([str(python), "-m", "pip", "install", "-r", str(requirements)], check=True)
     configuration = root / "config.json"
     if not configuration.exists():
         configuration.write_bytes((root / ".hookah" / "config" / "default.json").read_bytes())
@@ -111,13 +121,19 @@ def main(argv=None, root=None):
             return 0
         if sys.version_info < (3, 10):
             raise RuntimeError("Python 3.10+ is required. Select it using HOOKAH_PYTHON.")
+        if metadata.get("bundled_runtime") and not environment_python(root).is_file():
+            raise RuntimeError("The bundled Python runtime is missing. Extract the complete ZIP, including .hookah.")
         if arguments and arguments[0] == "setup":
             return setup(root, component, launcher, arguments[1:])
         if arguments and arguments[0] == "service":
             return service(root, component, arguments[1:])
         if component == "Agent":
-            missing = [name for name in ("psutil", "pysnmp") if importlib.util.find_spec(name) is None]
+            missing = [name for name in ("psutil", "pysnmp", "cryptography") if importlib.util.find_spec(name) is None]
             if missing:
+                bundled = (root / ".hookah" / "metadata" / "BUNDLE.json").is_file()
+                if bundled:
+                    raise RuntimeError("The bundled dependencies are incomplete (" + ", ".join(missing) +
+                                       "). Extract a fresh copy of the full ZIP without deleting .hookah.")
                 raise RuntimeError("Required dependencies are missing. Run " + launcher + " setup first.")
         command = app_command(root, component, arguments)
         environment = runtime_environment(root, launcher)

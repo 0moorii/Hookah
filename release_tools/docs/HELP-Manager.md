@@ -3,7 +3,7 @@
 Public entrypoint: **@LAUNCHER@** (@PLATFORM@, version @VERSION@).
 
 ```text
-@COMMAND@ setup                       Install the private Python environment
+@COMMAND@ setup                       Verify the bundled offline runtime
 @COMMAND@ setup --snmp-bin PATH       Set the Net-SNMP executable directory
 @COMMAND@ doctor                      Check dependencies and tool paths
 @COMMAND@ --version                   Print the application version
@@ -45,5 +45,6 @@ Authorized SNMP SET:
 ```
 
 Exit codes: 0=success, 1=runtime error, 2=usage error, 130=Ctrl+C.
-Python 3.10+ is required for runtime and setup; Net-SNMP clients are required for
-network operations. Every implementation/support file is under `.hookah/`.
+Python, PySNMP clients, encryption, and plotting dependencies are included.
+No dependency installation is needed. `--snmp-bin` optionally selects external
+Net-SNMP clients. Every implementation/support file is under `.hookah/`.

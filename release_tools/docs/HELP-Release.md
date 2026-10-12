@@ -2,7 +2,7 @@
 
 1. Choose `Agent` for the monitored device or `Manager` for the monitoring host.
 2. Choose the `Linux` or `Windows` folder inside that component.
-3. Install Python 3.10+ and run the launcher with `setup`.
+3. Run the launcher directly; Python and dependencies are already included.
 4. Edit its `config.json` for your network, then run the launcher normally.
 
 Linux examples:
@@ -27,7 +27,8 @@ Windows examples in PowerShell:
 
 Each component's `HELP.md` describes its commands. Detailed guides and service
 scripts live inside its `.hookah/` support folder. Implementation files are
-grouped under `.hookah/app/`, and setup creates `.hookah/environment/`.
+grouped under `.hookah/app/`, and `.hookah/environment/` contains the ready-to-use
+portable runtime. `setup` only verifies/configures the package, entirely offline.
 
 For testing or rebuilding, use the complete developer project in
 `.hookah/source/`; its `TESTING.md` explains the unit, integration, smoke, and

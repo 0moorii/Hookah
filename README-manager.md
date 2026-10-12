@@ -5,8 +5,10 @@
 End-user ZIPs are `Hookah-Manager-Linux-1.0.0.zip` and
 `Hookah-Manager-Windows-1.0.0.zip`. They expose only `Hookah-Manager.sh` or
 `Hookah-Manager.exe`, `README.md`, `HELP.md`, and `config.json`; supporting files
-are grouped under `.hookah/`. Run the public launcher with `setup`, then use
-the same launcher for all commands. The source-project `hookah-manager` wrapper
+are grouped under `.hookah/`. Run the public launcher directly, then use
+the same launcher for all commands. Python, plotting/encryption libraries, and
+a PySNMP client backend are included; `setup` only verifies the offline bundle.
+The source-project `hookah-manager` wrapper
 used in examples below is the developer equivalent.
 
 The Manager runs on the monitoring machine. It uses Net-SNMP clients to query
@@ -17,7 +19,9 @@ or `./hookah-manager help capture` for a specific topic.
 ## Linux installation
 
 Requirements: **Python 3.10+**, a virtual-environment-capable Python installation,
-and `snmpget`, `snmpwalk`, and `snmpset`.
+and `snmpget`, `snmpwalk`, and `snmpset` when using the developer source wrapper.
+The packaged CLI includes its own Python/runtime/client dependencies and needs
+no separate installation on x86-64 glibc Linux (glibc 2.28+).
 
 | Distribution | Net-SNMP installation |
 | --- | --- |
@@ -39,7 +43,8 @@ The launcher locates files relative to itself, so it works from another working
 directory. It prefers `.hookah/environment`; `HOOKAH_PYTHON=/path/to/python`
 selects another interpreter. From the developer project, the source wrapper
 prefers `.venv`, and Python entrypoints are also available directly. Requirements include
-Matplotlib and cryptography; Net-SNMP is installed through the OS separately.
+Matplotlib and cryptography; only the source wrapper needs Net-SNMP installed
+through the OS separately. Packaged commands use the included PySNMP backend.
 
 Windows native `.exe` setup and launch commands are in `WINDOWS-MANAGER.md`.
 

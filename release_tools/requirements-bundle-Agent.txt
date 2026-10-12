@@ -1,0 +1,6 @@
+pysnmp==7.1.30
+psutil==7.2.2
+cryptography==49.0.0
+pyasn1==0.6.4
+cffi==2.1.1
+pycparser==3.11

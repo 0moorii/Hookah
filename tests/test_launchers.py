@@ -27,7 +27,7 @@ class LauncherFixture(unittest.TestCase):
 
     def install_files(self, component, platform="Linux"):
         root = self.path / f"{component} With Spaces"
-        for name, data in release.component_entries(component, platform=platform).items():
+        for name, data in release.component_entries(component, platform=platform, bundle_runtime=False).items():
             target = root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
@@ -147,9 +147,9 @@ class WindowsLauncherTests(LauncherFixture):
                 result = self.run_windows(root / f"Hookah-{component}.exe", *arguments, python=probe)
                 self.assertEqual(result.returncode, 7, result.stderr)
                 recorded = json.loads(result.stdout)
-                self.assertEqual(recorded["argv"][0], "-B")
-                self.assertTrue(recorded["argv"][1].endswith("\\.hookah\\launcher.py"))
-                self.assertEqual(recorded["argv"][2:], arguments)
+                self.assertEqual(recorded["argv"][:4], ["-I", "-X", "utf8", "-B"])
+                self.assertTrue(recorded["argv"][4].endswith("\\.hookah\\launcher.py"))
+                self.assertEqual(recorded["argv"][5:], arguments)
                 self.assertEqual(recorded["program"], f"Hookah-{component}.exe")
 
     def test_missing_windows_interpreter_and_incomplete_package_fail_clearly(self):

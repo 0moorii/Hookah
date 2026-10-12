@@ -34,6 +34,18 @@ class ReleasePackageTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory(prefix="hookah-release-unit-")
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name)
+        self.addCleanup(mock.patch.stopall)
+        def small_bundle(component, platform, source=release.ROOT):
+            folder = self.path / "runtime-fixtures" / platform / component
+            interpreter = "python.exe" if platform == "Windows" else "bin/python"
+            python = folder / "environment" / interpreter
+            python.parent.mkdir(parents=True, exist_ok=True)
+            python.write_bytes(b"isolated runtime test fixture")
+            metadata = {"files": {interpreter: release.sha256(python)}, "executables": [interpreter]}
+            (folder / "BUNDLE.json").write_text(json.dumps(metadata), encoding="utf-8")
+            return folder
+        mock.patch.object(release, "ensure_bundle", side_effect=small_bundle).start()
+        mock.patch.object(release, "ensure_bundles", return_value={}).start()
 
     def test_agent_and_manager_contain_complete_independent_runtime_payloads(self):
         for component in ("Agent", "Manager"):
@@ -52,6 +64,9 @@ class ReleasePackageTests(unittest.TestCase):
                         entrypoint = "snmp_agent.py" if component == "Agent" else "snmp_data_collector_v12.py"
                         self.assertIn(".hookah/app/" + entrypoint, names)
                         self.assertIn(".hookah/launcher.py", names)
+                        self.assertIn(".hookah/metadata/BUNDLE.json", names)
+                        interpreter = "python.exe" if platform == "Windows" else "bin/python"
+                        self.assertIn(".hookah/environment/" + interpreter, names)
                         self.assertIn(f".hookah/dependencies/requirements-{component.lower()}.txt", names)
                         self.assertEqual(archive.read(".hookah/metadata/VERSION").decode().strip(), __version__)
                         self.assertTrue(all(name.startswith(".hookah/") for name in names if name.endswith(".py")))
@@ -80,7 +95,7 @@ class ReleasePackageTests(unittest.TestCase):
                         mode = info.external_attr >> 16
                         self.assertTrue(stat.S_ISDIR(mode) if info.is_dir() else stat.S_ISREG(mode))
                         executable = info.filename.endswith((".sh", ".exe")) or Path(info.filename).name in release.EXECUTABLE_FILES
-                        expected = 0o755 if executable or info.is_dir() else 0o644
+                        expected = 0o755 if executable or info.is_dir() or info.filename == ".hookah/environment/bin/python" else 0o644
                         self.assertEqual(mode & 0o777, expected)
                         if ".hookah" in Path(info.filename).parts:
                             self.assertTrue(info.external_attr & 0x02)

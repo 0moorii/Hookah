@@ -16,21 +16,22 @@ config.json
 The support folder is hidden on Linux and marked hidden by the Windows launcher.
 Keep the extracted directory together when moving it to another machine.
 
-## First-time setup
+## Run immediately — dependencies included
 
-Install **Python 3.10+**, then run:
+The package includes portable **Python 3.12** and the installed Agent dependencies.
+No Python installation, pip command, or internet connection is needed. Run:
 
 ```text
-@COMMAND@ setup
 @COMMAND@ --version
 @COMMAND@ config show
 @COMMAND@
 ```
 
-Setup installs the dependencies into `.hookah/environment`. The Windows `.exe`
-is a native x64 console launcher. It locates Python through `HOOKAH_PYTHON`, its
-private environment, the Windows `py` launcher, or `python`. The Linux `.sh`
-prefers `HOOKAH_PYTHON`, its private environment, then `python3`.
+Both launchers automatically use `.hookah/environment`, which contains Python,
+PySNMP, psutil, cryptography, and their dependencies. The Windows bundle also
+includes pywin32 for service support. `setup` is an optional offline verification
+command; it does not download or install anything in these packages.
+`HOOKAH_PYTHON` can explicitly select a developer interpreter instead.
 
 On Linux, if your ZIP extractor discarded executable permissions, run
 `chmod +x @LAUNCHER@` first. Commands and output paths work from other directories,

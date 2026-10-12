@@ -1,28 +1,13 @@
 #!/usr/bin/env python3
 r"""
-  _   _  ___   ___  _  __    _    _   _
- | | | |/ _ \ / _ \| |/ /   / \  | | | |
- | |_| | | | | | | | ' /   / _ \ | |_| |
- |  _  | |_| | |_| | . \  / ___ \|  _  |
- |_| |_|\___/ \___/|_|\_\/_/   \_\_| |_|
+ __  __     ______     ______     __  __     ______     __  __
+/\ \_\ \   /\  __ \   /\  __ \   /\ \/ /    /\  __ \   /\ \_\ \
+\ \  __ \  \ \ \/\ \  \ \ \/\ \  \ \  _"-.  \ \  __ \  \ \  __ \
+ \ \_\ \_\  \ \_____\  \ \_____\  \ \_\ \_\  \ \_\ \_\  \ \_\ \_\
+  \/_/\/_/   \/_____/   \/_____/   \/_/\/_/   \/_/\/_/   \/_/\/_/
 
-
-                     .  .
-                      ..
-                    .::::.
-                    ::::::
-                    '::::'
-                 ...  ::  ...
-                .::::::::::::.
-                      ::
-                    .::::.     .....
-                  .::'::'::.::::'   ::
-                 ::   ::   ::      ::
-                 ::...::...::   ...::
-                  '::::::::'  .::'
-                    :::::::::::'
-
-                      Hookah
+Welcome to Hookah v1.0.1-1
+if you use this, consider making friends.
 
  Monitor CPU, memory, and network traffic with SNMP GET/WALK/SET.
  Capture live metrics, export CSVs, and plot or compare sessions.
@@ -30,7 +15,7 @@ r"""
 
  Made by 0moorii
 
-SNMP Data Collector and Plotter v12
+SNMP Data Collector and Plotter
 --------------------------------
 Uses Net-SNMP command-line tools:
     snmpget
@@ -114,7 +99,13 @@ def ensure_csv_suffix(filename):
     return path
 
 
+def python_snmp_backend():
+    return os.environ.get("HOOKAH_SNMP_BACKEND") == "python" and _MANAGER_CONFIG.snmp_bin is None
+
+
 def snmp_tool(command):
+    if python_snmp_backend():
+        return "bundled PySNMP: " + command if importlib.util.find_spec("pysnmp") is not None else None
     search_path = str(_MANAGER_CONFIG.snmp_bin) if _MANAGER_CONFIG.snmp_bin else None
     return shutil.which(command, path=search_path)
 
@@ -152,6 +143,14 @@ def run_command(args):
         with proxy_context as proxy:
             if proxy is not None:
                 command_args[11] = proxy.snmp_target
+            if python_snmp_backend():
+                from snmp_python_client import run_client
+                try:
+                    return run_client(command_args)
+                except RuntimeError as exc:
+                    if proxy is not None and proxy.last_error:
+                        raise RuntimeError(f"Encrypted SNMP transport failed: {proxy.last_error}") from exc
+                    raise
             result = subprocess.run(
                 command_args,
                 capture_output=True,

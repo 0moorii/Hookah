@@ -2,7 +2,7 @@ PYTHON ?= python3
 TEST_ENV ?= .venv-test
 TEST_PYTHON = $(TEST_ENV)/bin/python
 
-.PHONY: setup-test test test-unit test-integration smoke-test release windows-launchers package-windows-agent
+.PHONY: setup-test test test-unit test-integration smoke-test release windows-launchers runtime-bundles package-windows-agent
 
 setup-test:
 	$(PYTHON) -m venv "$(TEST_ENV)"
@@ -23,7 +23,10 @@ smoke-test:
 windows-launchers:
 	$(PYTHON) -B -m release_tools.windows
 
-release: windows-launchers
+runtime-bundles:
+	"$(TEST_PYTHON)" -B -m release_tools.bundles
+
+release: windows-launchers runtime-bundles
 	"$(TEST_PYTHON)" -B build_release.py --output-directory dist
 
 package-windows-agent:

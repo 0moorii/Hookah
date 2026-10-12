@@ -12,7 +12,7 @@ Each exposes exactly one executable launcher, `README.md`, `HELP.md`, and
 - `docs/`: detailed component, MIB, encryption, and testing guides.
 - `platform/`: OS/service integration.
 - `metadata/`: version, manifests, and checksums.
-- `environment/`: the private environment created by `setup`.
+- `environment/`: included portable Python with dependencies already installed.
 
 Windows `.exe` entrypoints are native PE32+ x64 console programs, built from
 the included C source with standard Windows DLL dependencies. Linux `.sh`
@@ -39,11 +39,13 @@ and release verification results under `.hookah/metadata/`.
 
 ## Runtime
 
-Install Python **3.10+** and invoke the public launcher with `setup`. Dependencies
-are installed into the private environment; the visible `config.json` is retained.
-The Manager additionally needs Net-SNMP clients. Version and top-level help in
-the Windows executable work before Python setup. Arguments, Unicode paths,
-spaces, quotes, and child exit statuses are preserved.
+Invoke the public launcher directly. Portable Python **3.12.15**, Agent modules,
+encryption, plotting libraries, and the Manager's PySNMP client backend are
+included. No Python/pip/Net-SNMP installation or network download is necessary.
+`setup` remains an optional offline check and preserves `config.json`. Windows
+Agent bundles also include pywin32, allowing service installation without
+downloading dependencies. Linux targets x86-64 glibc systems with glibc 2.28+.
+Arguments, Unicode paths, spaces, quotes, and exit statuses are preserved.
 
 Default profiles use UDP 1161 and matching `public` read access for a loopback
 trial. The Agent initially permits loopback only. Set the real Manager addresses,
@@ -62,6 +64,10 @@ Windows executable-format validation. Fixed ZIP/PE timestamps make equivalent
 builds deterministic. Reports record failures/errors/skips and the Windows runner.
 SCM integration uses mocks on Linux; target Windows deployment instructions are
 in the Windows guides.
+
+Isolated bundle tests block system Python, disable pip downloads, and verify
+startup, diagnostics, SNMP operations, capture, plotting, and key generation
+using the supplied runtimes. Windows executable tests run under Wine on Linux.
 
 Check the download hashes with `sha256sum -c SHA256SUMS` in `dist/`, or compare
 Windows `Get-FileHash -Algorithm SHA256` output with the checksum inventory.

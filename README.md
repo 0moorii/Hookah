@@ -34,14 +34,17 @@ config.json
 ```
 
 The support folder is hidden on Linux, has hidden ZIP attributes, and is marked
-hidden by the native Windows launcher. Setup creates `.hookah/environment/`.
+hidden by the native Windows launcher. `.hookah/environment/` already contains
+portable Python and all required modules.
 The previous unsuffixed Agent/Manager ZIP names and `Hookah-Agent-Windows.zip`
 are clean-layout aliases for the Windows variants.
 
-Install **Python 3.10+**, then run the public launcher with `setup`, `--help`, or
-normal CLI arguments. Windows launchers are genuine **x64 PE console executables**
-that start the private Python environment. Linux launchers are executable shell
-scripts. Net-SNMP clients are additionally required on the Manager machine.
+Run the public launcher immediately after extraction: **Python and dependencies
+are included**, and no installation or internet connection is needed. The Manager
+uses the included PySNMP client backend and includes plotting/encryption modules.
+Windows launchers are genuine **x64 PE console executables**; Linux launchers are
+shell scripts for x86-64 glibc Linux (glibc 2.28+). `setup` is an optional offline
+verification command, and `--snmp-bin` can select existing external Net-SNMP tools.
 
 ## Documentation
 
@@ -66,6 +69,10 @@ make release
 
 `HOOKAH_WINDOWS_CC=/path/to/x86_64-w64-mingw32-gcc` selects another MinGW compiler.
 Native launcher builds are cached under `build/windows/` against source hashes.
+`make runtime-bundles` downloads checksum-pinned Python distributions and binary
+wheels on the build machine, caching their already-installed runtime payloads in
+`build/bundles/`. End-user machines do not perform these downloads. Runtime and
+third-party license notices are retained in the bundled environment.
 Unit tests, real loopback integration tests, and a smoke test run before ZIP
 creation. Windows launchers are also executed when Windows or Wine is available.
 Archives are deterministic, preserve Unix executable modes/Windows hidden flags,

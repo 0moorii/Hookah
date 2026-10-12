@@ -16,25 +16,24 @@ config.json
 The support folder is hidden on Linux and marked hidden by the Windows launcher.
 Keep the extracted directory together when moving it to another machine.
 
-## First-time setup
+## Run immediately — dependencies included
 
-Install **Python 3.10+** and the **Net-SNMP command-line clients**, then run:
+The package includes portable **Python 3.12**, plotting/encryption libraries,
+and a bundled **PySNMP** client backend. No Python, pip, Net-SNMP installation,
+or internet connection is required. Run:
 
 ```text
-@COMMAND@ setup
 @COMMAND@ doctor
 @COMMAND@ --version
 ```
 
-Setup installs the private environment into `.hookah/environment`. On Windows,
-Net-SNMP can be selected with `@COMMAND@ setup --snmp-bin "C:/Program Files/Net-SNMP/bin"`.
-On Debian/Ubuntu install clients with `sudo apt install snmp python3-venv`;
-Fedora/RHEL uses `sudo dnf install net-snmp-utils`, Arch uses
-`sudo pacman -S net-snmp`, and openSUSE uses `sudo zypper install net-snmp`.
+Installed dependencies are under `.hookah/environment`: PySNMP, cryptography,
+Matplotlib, NumPy, Pillow, and their supporting modules. `setup` is an optional
+offline verification command. To use existing external Net-SNMP clients instead,
+set `snmp_bin` in `config.json` or pass `--snmp-bin PATH`.
 
-The Windows `.exe` is a native x64 console launcher. It prefers `HOOKAH_PYTHON`,
-the private environment, `py -3`, then `python`. The Linux `.sh` prefers
-`HOOKAH_PYTHON`, the private environment, then `python3`. On Linux, if extraction
+The Windows `.exe` and Linux `.sh` automatically select the bundled runtime.
+`HOOKAH_PYTHON` is an explicit developer override. On Linux, if extraction
 discarded executable permissions, run `chmod +x @LAUNCHER@` first.
 
 ## Run

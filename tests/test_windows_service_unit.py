@@ -127,6 +127,25 @@ class WindowsServiceTests(unittest.TestCase):
         with mock.patch.object(service.sys, "platform", "linux"), self.assertRaises(RuntimeError):
             service.windows_dependencies()
 
+    def test_unavailable_os_network_apis_do_not_stop_other_metrics(self):
+        from tests.test_agent_unit import CollectionTests
+        fixture = CollectionTests(methodName="test_get_requests_do_not_trigger_host_collection")
+        try:
+            fixture.setUp()
+            with mock.patch.object(snmp_agent.psutil, "net_io_counters", side_effect=RuntimeError("GetAdaptersAddresses syscall failed")), \
+                    mock.patch.object(snmp_agent.psutil, "net_if_stats", side_effect=OSError("not available")), \
+                    mock.patch.object(snmp_agent.psutil, "net_if_addrs", side_effect=NotImplementedError):
+                fixture.metrics.refresh(force=True)
+            self.assertIn(snmp_agent.SYSTEM + (1, 0), fixture.metrics.snapshot)
+            self.assertIn((1, 3, 6, 1, 2, 1, 25, 2, 2, 0), fixture.metrics.snapshot)
+            self.assertNotIn((1, 3, 6, 1, 2, 1, 2, 1, 0), fixture.metrics.snapshot)
+        finally:
+            fixture.doCleanups()
+
+    def test_disabled_windows_performance_counters_are_not_missing_dependencies(self):
+        with mock.patch.object(snmp_agent.psutil, "swap_memory", side_effect=RuntimeError("Performance counters may be disabled")):
+            self.assertIsNone(snmp_agent.optional_psutil("swap_memory"))
+
     def test_transfer_package_has_service_installer_and_application_dependencies(self):
         output = build_agent_package.build_package(self.path / "Hookah-Agent-Windows.zip")
         with zipfile.ZipFile(output) as archive:
@@ -137,4 +156,5 @@ class WindowsServiceTests(unittest.TestCase):
             self.assertIn(".hookah/platform/windows/install-agent.ps1", names)
             self.assertIn(".hookah/dependencies/requirements-windows-agent.txt", names)
             self.assertIn(".hookah/docs/WINDOWS-AGENT.md", names)
-            self.assertFalse(any(name.endswith(".pem") or name.startswith(".venv") for name in names))
+            self.assertFalse(any((name.endswith(".pem") and not name.startswith(".hookah/environment/"))
+                                 or name.startswith(".venv") for name in names))

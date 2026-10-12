@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 
 from hookah_version import __version__
 from release_tools.windows import ensure_windows_launchers, inspect_pe
+from release_tools.bundles import ensure_bundle, ensure_bundles
 
 
 ROOT = Path(__file__).resolve().parent
@@ -28,7 +29,7 @@ AGENT_FILES = COMMON_FILES + (
     "README-agent.md", "WINDOWS-AGENT.md", "windows/install-agent.ps1", "windows/uninstall-agent.ps1",
 )
 MANAGER_FILES = COMMON_FILES + (
-    "snmp_data_collector_v12.py", "snmp_manager_config.py", "snmp_manager_config.example.json",
+    "snmp_data_collector_v12.py", "snmp_python_client.py", "snmp_manager_config.py", "snmp_manager_config.example.json",
     "requirements-manager.txt", "README-manager.md", "WINDOWS-MANAGER.md",
 )
 SOURCE_FILES = tuple(sorted(set(AGENT_FILES + MANAGER_FILES))) + (
@@ -46,7 +47,17 @@ METADATA_DIRECTORY = ".hookah/metadata"
 PLATFORMS = ("Linux", "Windows")
 
 
+def entry_bytes(data):
+    return data.read_bytes() if isinstance(data, Path) else data
+
+
 def sha256(data):
+    if isinstance(data, Path):
+        digest = hashlib.sha256()
+        with data.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
     return hashlib.sha256(data).hexdigest()
 
 
@@ -75,7 +86,7 @@ def render_document(name, component, platform, source=ROOT):
     return text.encode("utf-8")
 
 
-def component_entries(component, source=ROOT, platform="Windows"):
+def component_entries(component, source=ROOT, platform="Windows", *, bundle_runtime=True):
     if component not in ("Agent", "Manager"):
         raise ValueError("Choose the Agent or Manager component.")
     if platform not in PLATFORMS:
@@ -109,10 +120,11 @@ def component_entries(component, source=ROOT, platform="Windows"):
     entries[".hookah/config/default.json"] = entries["config.json"]
     entries[".hookah/launcher.py"] = (Path(source) / "release_tools" / "runtime.py").read_bytes()
     entries[METADATA_DIRECTORY + "/VERSION"] = (__version__ + "\n").encode("ascii")
-    metadata = {"component": component, "platform": platform, "version": __version__}
+    metadata = {"component": component, "platform": platform, "version": __version__, "bundled_runtime": bundle_runtime}
     entries[METADATA_DIRECTORY + "/component.json"] = (json.dumps(metadata, indent=2) + "\n").encode("utf-8")
     entries["README.md"] = render_document(f"README-{component}.md", component, platform, source)
     entries["HELP.md"] = render_document(f"HELP-{component}.md", component, platform, source)
+    entries[".hookah/docs/THIRD-PARTY.md"] = (Path(source) / "release_tools/docs/THIRD-PARTY.md").read_bytes()
     if platform == "Linux":
         launcher = f"Hookah-{component}.sh"
         template = (Path(source) / "release_tools" / "launchers" / "linux.sh.in").read_text(encoding="utf-8")
@@ -121,6 +133,12 @@ def component_entries(component, source=ROOT, platform="Windows"):
         binary = ensure_windows_launchers(source)[component]
         entries[f"Hookah-{component}.exe"] = binary.read_bytes()
         inspect_pe(entries[f"Hookah-{component}.exe"])
+    if bundle_runtime:
+        bundle = ensure_bundle(component, platform, source)
+        for path in sorted((bundle / "environment").rglob("*")):
+            if path.is_file():
+                entries[".hookah/environment/" + path.relative_to(bundle / "environment").as_posix()] = path
+        entries[METADATA_DIRECTORY + "/BUNDLE.json"] = (bundle / "BUNDLE.json").read_bytes()
     return entries
 
 
@@ -186,11 +204,25 @@ def verify_archive(path):
                 raise ValueError("Python implementation files must stay inside the support folder.")
             if platform == "Windows":
                 inspect_pe(archive.read(prefix + launcher))
+            if prefix + METADATA_DIRECTORY + "/BUNDLE.json" in names:
+                bundle = json.loads(archive.read(prefix + METADATA_DIRECTORY + "/BUNDLE.json"))
+                interpreter = "python.exe" if platform == "Windows" else "bin/python"
+                if prefix + ".hookah/environment/" + interpreter not in names:
+                    raise ValueError("The bundled Python interpreter is missing.")
+                for name, digest in bundle["files"].items():
+                    if manifest["files"].get(".hookah/environment/" + name) != digest:
+                        raise ValueError("The packaged runtime does not match its dependency inventory.")
         return manifest
 
 
 def write_archive(output, entries, component, *, prefix="", platform=None):
     output = Path(output).expanduser().resolve()
+    executables = set()
+    for name, data in entries.items():
+        if name.endswith(METADATA_DIRECTORY + "/BUNDLE.json"):
+            metadata = json.loads(entry_bytes(data))
+            root = name.removesuffix(METADATA_DIRECTORY + "/BUNDLE.json")
+            executables.update(root + ".hookah/environment/" + path for path in metadata.get("executables", []))
     entries = with_manifest(entries, component, platform)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
@@ -201,7 +233,7 @@ def write_archive(output, entries, component, *, prefix="", platform=None):
             for name, data in sorted(entries.items()):
                 info = zipfile.ZipInfo(prefix + name, date_time=ZIP_TIMESTAMP)
                 info.create_system = 3
-                executable = name.endswith((".sh", ".exe")) or PurePosixPath(name).name in EXECUTABLE_FILES
+                executable = name in executables or name.endswith((".sh", ".exe")) or PurePosixPath(name).name in EXECUTABLE_FILES
                 mode = 0o755 if executable or name.endswith("/") else 0o644
                 info.external_attr = ((stat.S_IFDIR if name.endswith("/") else stat.S_IFREG) | mode) << 16
                 if name.endswith("/"):
@@ -209,7 +241,11 @@ def write_archive(output, entries, component, *, prefix="", platform=None):
                 if ".hookah" in PurePosixPath(name).parts:
                     info.external_attr |= 0x02
                 info.compress_type = zipfile.ZIP_DEFLATED
-                archive.writestr(info, data, compresslevel=9)
+                if isinstance(data, Path):
+                    with data.open("rb") as input_file, archive.open(info, "w", force_zip64=True) as output_file:
+                        shutil.copyfileobj(input_file, output_file)
+                else:
+                    archive.writestr(info, data, compresslevel=9)
         verify_archive(temporary)
         temporary.replace(output)
         return output
@@ -281,9 +317,11 @@ def build_release(output_directory, validation, source=ROOT):
 def run_verification(source=ROOT, python=sys.executable):
     source = Path(source).resolve()
     ensure_windows_launchers(source)
+    ensure_bundles(source)
     reports = {"version": __version__, "native_windows_execution": sys.platform == "win32",
                "windows_launcher_runner": "native" if os.name == "nt" else
-                   "wine" if os.environ.get("HOOKAH_WINE") or shutil.which("wine") or shutil.which("wine64") else "unavailable"}
+                   "wine" if os.environ.get("HOOKAH_WINE") or shutil.which("wine") or shutil.which("wine64") else "unavailable",
+               "bundled_runtime": True}
     environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", MPLBACKEND="Agg", PYTHONUTF8="1")
     with tempfile.TemporaryDirectory(prefix="hookah-release-checks-") as directory:
         for suite in ("unit", "integration", "smoke"):

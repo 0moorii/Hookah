@@ -81,6 +81,9 @@ static DWORD run_python(const wchar_t *python, int use_py_launcher,
     if (!command) return status;
     if (!argument(command, &length, python)
         || (use_py_launcher && !argument(command, &length, L"-3"))
+        || !argument(command, &length, L"-I")
+        || !argument(command, &length, L"-X")
+        || !argument(command, &length, L"utf8")
         || !argument(command, &length, L"-B")
         || !argument(command, &length, bootstrap)) goto too_long;
     for (int index = 1; index < argc; ++index)
@@ -174,6 +177,12 @@ int wmain(int argc, wchar_t **argv) {
         if (started) return (int)status;
         message(GetStdHandle(STD_ERROR_HANDLE), L"Hookah: HOOKAH_PYTHON could not be started. Check its executable path.\n");
         return 127;
+    }
+    if (join_path(python, root, L".hookah\\environment\\python.exe") && GetFileAttributesW(python) != INVALID_FILE_ATTRIBUTES) {
+        status = run_python(python, 0, bootstrap, argc, argv, &started);
+        if (started) return (int)status;
+        message(GetStdHandle(STD_ERROR_HANDLE), L"Hookah: the bundled runtime could not be started. Extract a fresh copy of the ZIP.\n");
+        return 1;
     }
     if (join_path(python, root, L".hookah\\environment\\Scripts\\python.exe") && GetFileAttributesW(python) != INVALID_FILE_ATTRIBUTES) {
         status = run_python(python, 0, bootstrap, argc, argv, &started);

@@ -7,20 +7,20 @@ under the hidden `.hookah/` support tree.
 
 ## Foreground Agent
 
-Install **Python 3.10+**, then in PowerShell:
+Python and the Agent dependencies are included. In PowerShell:
 
 ```powershell
-.\Hookah-Agent.exe setup
 .\Hookah-Agent.exe --version
 .\Hookah-Agent.exe --help
 .\Hookah-Agent.exe config show
 .\Hookah-Agent.exe
 ```
 
-Setup creates `.hookah\environment` and installs the Agent dependencies. The
-native x64 console launcher prefers `HOOKAH_PYTHON`, its private environment,
-`py -3`, then `python`. It forwards arguments and exit status and handles spaces,
-Unicode, quotes, and trailing backslashes. Version/help work before Python setup.
+`.hookah\environment` contains portable Python, PySNMP, psutil, cryptography, and
+pywin32. The x64 console launcher runs this bundled interpreter directly. No
+installation or internet connection is required; `setup` only verifies the
+offline bundle. `HOOKAH_PYTHON` is an explicit developer override. Arguments,
+Unicode paths, quotes, and exit statuses are preserved.
 
 The visible `config.json` initially uses UDP 1161 and loopback-only Manager
 access. Set `allowed_managers` to include the actual LAN Manager's address/CIDR.
@@ -39,22 +39,21 @@ while the Agent uses its Python protocol implementation.
 
 ## Native auto-start service
 
-Use a system-wide Python installation readable by the service account.
 Open **administrator PowerShell** in the extracted package directory:
 
 ```powershell
 .\Hookah-Agent.exe service install `
-    -PythonExe "C:\Program Files\Python312\python.exe" `
     -ManagerAddresses "192.168.1.10/32,127.0.0.1/32" `
     -Port 1161 -SampleInterval 1 -ReadCommunity public -WriteCommunity lab-write
 ```
 
 The service installer creates grouped `.hookah\app`, `.hookah\dependencies`,
 and `.hookah\environment` folders under `C:\Program Files\Hookah Agent`. It
-installs pywin32, gives LocalService access, creates the persistent profile at
+copies the included runtime (including pywin32), gives LocalService access, creates the persistent profile at
 `C:\ProgramData\Hookah\Agent\snmp_agent_config.json`, configures a restricted
 inbound UDP firewall rule, and starts **HookahSnmpAgent** with automatic startup
-and restart-on-failure.
+and restart-on-failure. No dependency download is needed. An explicit `-PythonExe`
+can still select an external full Python installation for a custom service environment.
 
 Optional `-RsaPrivateKey PATH` and `-PeerPublicKey PATH` configure explicitly
 transferred encryption keys. Sample intervals are numeric seconds.

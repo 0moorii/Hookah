@@ -1,0 +1,18 @@
+{
+  "listen_address": "0.0.0.0",
+  "port": 161,
+  "read_community": "public",
+  "write_community": null,
+  "allowed_managers": ["127.0.0.1/32", "192.168.1.10/32"],
+  "sample_interval": 1.0,
+  "collection_intervals": {},
+  "sys_contact": "Lab administrator",
+  "sys_name": null,
+  "sys_location": "Local network lab",
+  "state_file": null,
+  "encryption": {
+    "enabled": false,
+    "private_key_file": null,
+    "peer_public_key_file": null
+  }
+}

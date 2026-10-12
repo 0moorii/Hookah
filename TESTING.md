@@ -48,6 +48,12 @@ an explicit Wine executable when it is not on PATH. Wine-related environment
 variables are inherited by the runner; `windows_launcher_runner` in validation
 reports records `native`, `wine`, or `unavailable`.
 
+`make runtime-bundles` builds the offline distributions' portable Python runtimes
+and installed wheels in `build/bundles/`. Python archives are pinned by SHA-256
+in `release_tools/bundle-lock.json`; dependencies have exact version pins and
+integrity inventories. End users run the supplied bundles without pip or system
+Python. The source test environment still uses `requirements-test.txt`.
+
 On Windows, create `.venv-test` with `py -3 -m venv .venv-test`, install
 `requirements-test.txt` using `.venv-test\Scripts\python.exe -m pip`, and invoke
 the runner with that Python executable. The direct Unix shebang/executable and
@@ -96,6 +102,8 @@ The individual runner accepts `--report PATH` to save its actual results as JSON
 | `tests/test_launchers.py` | Linux `.sh` launchers from another directory/paths with spaces, clean help, PowerShell syntax/setup helpers, and real Windows `.exe` version/help/Unicode/quote/exit behavior on Windows or Wine. |
 | `tests/test_package_runtime.py` | Hidden environment setup, visible profile preservation/default restoration, public setup instructions, configuration forwarding, service dispatch restrictions, and Windows UTF-8 BOM support. |
 | `tests/test_packaged_integration.py` | Real grouped Agent/Manager packages communicating through their public launchers, visible-profile GET/WALK/SET, synchronized capture, headless plotting, and absence of root-level Python clutter. |
+| `tests/test_bundles.py` | Safe runtime/wheel extraction, included licenses, bundle integrity, and offline Linux/Windows launch, diagnostics, SNMP capture, plots, and key generation without system Python or pip downloads. |
+| `tests/test_python_client.py` | Included PySNMP client formatting/Counter64 precision, SET data types, target validation, protocol v1/v2c GET/WALK/SET, and external-client overrides. |
 
 Unit tests advance virtual monotonic clocks to verify exact **1**, **10**, and
 **120** second boundaries without waiting two minutes. Live integration tests

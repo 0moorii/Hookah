@@ -3,7 +3,7 @@
 Public entrypoint: **@LAUNCHER@** (@PLATFORM@, version @VERSION@).
 
 ```text
-@COMMAND@ setup                       Install private Python dependencies
+@COMMAND@ setup                       Verify bundled dependencies offline
 @COMMAND@ --version                   Print the application version
 @COMMAND@ --help                      Print this guide
 @COMMAND@                            Start the foreground Agent
@@ -39,7 +39,8 @@ Windows service installation (administrator PowerShell):
 @COMMAND@ service uninstall
 ```
 
-Python 3.10+ is required for runtime and setup. All setup and implementation files
-are kept in `.hookah/`; the public commands manage the adjacent `config.json`.
+Python and the Agent dependencies are included. Run directly after extraction;
+`setup` only verifies the offline bundle. Keep the whole `.hookah/` folder beside
+the launcher. Public commands manage the adjacent `config.json`.
 Detailed MIB, encryption, Linux/systemd, and Windows service guides are under
 `.hookah/docs/` and `.hookah/platform/`.

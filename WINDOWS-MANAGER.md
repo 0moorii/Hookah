@@ -7,20 +7,19 @@ support tree and supports paths containing spaces and Unicode characters.
 
 ## Setup
 
-Install **Python 3.10+** and the **Net-SNMP Windows command-line clients**
-(`snmpget.exe`, `snmpwalk.exe`, and `snmpset.exe`). In PowerShell:
+Python, SNMP client support, encryption, and plotting dependencies are included.
+No system Python or Net-SNMP installation is necessary. In PowerShell:
 
 ```powershell
-.\Hookah-Manager.exe setup --snmp-bin "C:\Program Files\Net-SNMP\bin"
 .\Hookah-Manager.exe doctor
 .\Hookah-Manager.exe --version
 ```
 
-If Net-SNMP is already on PATH, use `setup` without `--snmp-bin`.
-Setup creates `.hookah\environment`, installs the grouped dependency list,
-preserves an existing `config.json`, optionally records the Net-SNMP directory,
-and runs diagnostics. Administrator privileges are unnecessary for foreground
-setup. `HOOKAH_PYTHON` selects an explicit Python executable when needed.
+The installed runtime is already in `.hookah\environment`. `setup` is an optional
+offline verification command that preserves `config.json`; it never downloads
+dependencies. To use external Net-SNMP tools instead of the bundled PySNMP client,
+set `snmp_bin` in the profile or pass `--snmp-bin PATH`. Administrator privileges
+are unnecessary for foreground use. `HOOKAH_PYTHON` is a developer override.
 
 ## Run
 
@@ -41,10 +40,9 @@ or forward slashes. Quote CLI paths containing spaces. The adjacent profile is
 used even when the executable is started from another directory; `--config PATH`
 or `HOOKAH_MANAGER_CONFIG` selects another profile.
 
-Interpreter selection is `HOOKAH_PYTHON`, the private environment, `py -3`, then
-`python`. Arguments and child exit statuses are preserved. Native `--version`
-and top-level help work before Python setup. The executable is a launcher for
-the private Python runtime; install Python before the first `setup` invocation.
+The executable selects its bundled Python runtime automatically unless
+`HOOKAH_PYTHON` explicitly overrides it. Arguments and exit statuses are preserved.
+Run after extracting the whole ZIP, including the hidden `.hookah/` directory.
 
 ## Verification
 

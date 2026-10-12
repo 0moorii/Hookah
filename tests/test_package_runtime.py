@@ -18,8 +18,8 @@ class PackageRuntimeTests(LauncherFixture):
     def test_application_commands_keep_code_hidden_and_forward_config_overrides(self):
         root = self.install_files("Agent")
         command = runtime.app_command(root, "Agent", ["config", "show", "--config", "custom.json"])
-        self.assertEqual(Path(command[4]), root / ".hookah/app/snmp_agent.py")
-        self.assertEqual(command[5:7], ["--config", str(root / "config.json")])
+        self.assertEqual(Path(command[7]), root / ".hookah/app/snmp_agent.py")
+        self.assertEqual(command[8:10], ["--config", str(root / "config.json")])
         self.assertEqual(command[-2:], ["--config", "custom.json"])
         command = runtime.app_command(root, "Manager", ["config", "init"])
         self.assertEqual(command[-2:], ["--config", str(root / "config.json")])
@@ -39,6 +39,18 @@ class PackageRuntimeTests(LauncherFixture):
                 mock.patch.dict(os.environ, {"HOOKAH_PROGRAM_NAME": "Hookah-Agent.sh"}), contextlib.redirect_stderr(io.StringIO()) as error:
             self.assertEqual(runtime.main([], root), 1)
         self.assertIn("Hookah-Agent.sh setup", error.getvalue())
+        self.assertNotIn("pip", error.getvalue())
+
+    def test_incomplete_bundled_runtime_requests_a_complete_extraction_not_pip(self):
+        root = self.install_files("Agent")
+        metadata = root / ".hookah/metadata/component.json"
+        document = json.loads(metadata.read_text(encoding="utf-8"))
+        document["bundled_runtime"] = True
+        metadata.write_text(json.dumps(document), encoding="utf-8")
+        with mock.patch.object(runtime.importlib.util, "find_spec", side_effect=AssertionError("unexpected dependency lookup")), \
+                contextlib.redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(runtime.main([], root), 1)
+        self.assertIn("Extract the complete ZIP", error.getvalue())
         self.assertNotIn("pip", error.getvalue())
 
     def test_setup_uses_only_private_environment_and_preserves_existing_config(self):

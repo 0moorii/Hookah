@@ -2,7 +2,7 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    [string]$PythonExe = "python",
+    [string]$PythonExe = "",
     [string]$InstallDirectory = (Join-Path $env:ProgramFiles "Hookah Agent"),
     [string]$DataDirectory = (Join-Path $env:ProgramData "Hookah\Agent"),
     [string[]]$ManagerAddresses = @("127.0.0.1/32"),
@@ -17,10 +17,13 @@ param(
 $ErrorActionPreference = "Stop"
 $source = Split-Path $PSScriptRoot -Parent
 $dependencies = $source
+$bundledEnvironment = $null
 if (-not (Test-Path -LiteralPath (Join-Path $source "snmp_agent.py"))) {
     $support = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
     $source = Join-Path $support "app"
     $dependencies = Join-Path $support "dependencies"
+    $candidate = Join-Path $support "environment"
+    if (Test-Path -LiteralPath (Join-Path $candidate "python.exe")) { $bundledEnvironment = $candidate }
 }
 $ManagerAddresses = @($ManagerAddresses | ForEach-Object { $_ -split "," } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 if (-not $ManagerAddresses.Count) { throw "Supply at least one Manager address or CIDR." }
@@ -41,7 +44,12 @@ if (Get-Service -Name HookahSnmpAgent -ErrorAction SilentlyContinue) {
     throw "HookahSnmpAgent is already installed. Use the service CLI to manage it."
 }
 
-$resolvedPython = (Get-Command $PythonExe -ErrorAction Stop).Source
+$portable = $bundledEnvironment -and -not $PythonExe
+if ($portable) {
+    $resolvedPython = Join-Path $bundledEnvironment "python.exe"
+} else {
+    $resolvedPython = (Get-Command $(if ($PythonExe) { $PythonExe } else { "python" }) -ErrorAction Stop).Source
+}
 Invoke-Checked $resolvedPython @("-c", "import sys; assert sys.version_info >= (3, 10), 'Python 3.10+ required'")
 New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
 $installedSupport = Join-Path $InstallDirectory ".hookah"
@@ -62,11 +70,20 @@ foreach ($file in @("requirements-agent.txt", "requirements-windows-agent.txt"))
 }
 
 $venv = Join-Path $installedSupport "environment"
-Invoke-Checked $resolvedPython @("-m", "venv", $venv)
-$servicePython = Join-Path $venv "Scripts\python.exe"
+if ($portable) {
+    if (Test-Path -LiteralPath $venv) { throw "An installed runtime already exists; review it before installing the service." }
+    Copy-Item -LiteralPath $bundledEnvironment -Destination $venv -Recurse
+    $servicePython = Join-Path $venv "python.exe"
+} else {
+    Invoke-Checked $resolvedPython @("-m", "venv", $venv)
+    $servicePython = Join-Path $venv "Scripts\python.exe"
+}
 $agent = Join-Path $applicationDirectory "snmp_agent.py"
 $service = Join-Path $applicationDirectory "snmp_agent_windows_service.py"
-Invoke-Checked $servicePython @("-m", "pip", "install", "-r", (Join-Path $dependencyDirectory "requirements-windows-agent.txt"))
+if (-not $portable) {
+    Invoke-Checked $servicePython @("-m", "pip", "install", "-r", (Join-Path $dependencyDirectory "requirements-windows-agent.txt"))
+}
+Invoke-Checked $servicePython @("-I", "-B", "-c", "import psutil,pysnmp,cryptography,win32service,servicemanager")
 
 $configuration = Join-Path $DataDirectory "snmp_agent_config.json"
 if (-not (Test-Path -LiteralPath $configuration)) {
