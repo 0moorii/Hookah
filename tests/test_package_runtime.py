@@ -107,7 +107,7 @@ class PackageRuntimeTests(LauncherFixture):
     def test_agent_accepts_utf8_bom_in_visible_windows_profile(self):
         root = self.install_files("Agent")
         (root / "config.json").write_text('{"port": 22161}', encoding="utf-8-sig")
-        command = [str(root / "Hookah-Agent.sh"), "config", "show"] if os.name != "nt" else [sys.executable, str(root / ".hookah/launcher.py"), "config", "show"]
+        command = [str(root / "hookah-ag"), "--config-show"] if os.name != "nt" else [sys.executable, str(root / ".hookah/launcher.py"), "--config-show"]
         environment = dict(self.environment(), HOOKAH_PACKAGE_ROOT=str(root))
         result = subprocess.run(command, cwd=self.caller, env=environment, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)

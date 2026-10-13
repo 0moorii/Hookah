@@ -50,7 +50,7 @@ class ReleasePackageTests(unittest.TestCase):
     def test_agent_and_manager_contain_complete_independent_runtime_payloads(self):
         for component in ("Agent", "Manager"):
             for platform in release.PLATFORMS:
-                launcher = f"Hookah-{component}.{'sh' if platform == 'Linux' else 'exe'}"
+                launcher = release.launcher_name(component, platform)
                 with self.subTest(component=component, platform=platform):
                     output = release.build_component(component, self.path / f"{component}-{platform}.zip", platform=platform)
                     manifest = release.verify_archive(output)
@@ -144,9 +144,8 @@ class ReleasePackageTests(unittest.TestCase):
         with zipfile.ZipFile(outputs[-1]) as archive:
             for component in ("Agent", "Manager"):
                 for platform in release.PLATFORMS:
-                    extension = "sh" if platform == "Linux" else "exe"
                     location = prefix + f"{component}/{platform}/"
-                    self.assertIn(location + f"Hookah-{component}.{extension}", archive.namelist())
+                    self.assertIn(location + release.launcher_name(component, platform), archive.namelist())
                     self.assertIn(location + "config.json", archive.namelist())
             self.assertIn(prefix + ".hookah/source/tests/test_manager_cli.py", archive.namelist())
             self.assertIn(prefix + ".hookah/source/smoke_test.py", archive.namelist())

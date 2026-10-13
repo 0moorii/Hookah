@@ -15,9 +15,15 @@ Each exposes exactly one executable launcher, `README.md`, `HELP.md`, and
 - `environment/`: included portable Python with dependencies already installed.
 
 Windows `.exe` entrypoints are native PE32+ x64 console programs, built from
-the included C source with standard Windows DLL dependencies. Linux `.sh`
+the included C source with standard Windows DLL dependencies. Linux shell
 entrypoints preserve executable permissions. The support folder carries hidden
 ZIP attributes and is marked hidden by the Windows executable.
+
+Linux packages now expose `hookah-ag` and `hookah-mg` shell commands. Every
+operation uses parameters; neither Linux command opens the numbered menu.
+The Manager stores multiple Agent addresses and supports adding, selecting,
+listing, and removing them. See `LINUX-CLI.md` for commands and PATH installation.
+Windows entrypoints and menus are unchanged.
 
 ## Artifacts
 

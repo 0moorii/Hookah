@@ -96,8 +96,10 @@ class OfflineBundleTests(LauncherFixture):
         return root
 
     def offline_environment(self):
-        if os.name != "nt" and not (self.caller / "dirname").exists():
-            (self.caller / "dirname").symlink_to(shutil.which("dirname"))
+        if os.name != "nt":
+            for name in ("dirname", "readlink"):
+                if not (self.caller / name).exists():
+                    (self.caller / name).symlink_to(shutil.which(name))
         environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PIP_NO_INDEX="1", WINEDEBUG="-all")
         for name in ("HOOKAH_PYTHON", "PYTHONPATH", "PYTHONHOME", "HOOKAH_MANAGER_CONFIG", "HOOKAH_SNMP_BACKEND"):
             environment.pop(name, None)
@@ -113,9 +115,9 @@ class OfflineBundleTests(LauncherFixture):
                 blocker = self.caller / "python3"
                 blocker.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
                 blocker.chmod(0o755)
-                launcher = root / f"Hookah-{component}.sh"
-                command = ["config", "show"] if component == "Agent" else ["doctor"]
-                for arguments in (command, ["setup"]):
+                launcher = root / release.launcher_name(component, "Linux")
+                command = ["--config-show"] if component == "Agent" else ["--doctor"]
+                for arguments in (command, ["--setup"]):
                     result = subprocess.run([str(launcher), *arguments], env=environment, cwd=self.caller,
                                             capture_output=True, text=True, timeout=30)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -131,25 +133,25 @@ class OfflineBundleTests(LauncherFixture):
         manager_root = self.install_bundle("Manager", "Linux")
         (self.caller / "dirname").symlink_to(shutil.which("dirname"))
         environment = self.offline_environment()
-        with RunningAgent(sample_interval=0.1, launcher=agent_root / "Hookah-Agent.sh", environment=environment) as agent:
+        with RunningAgent(sample_interval=0.1, launcher=agent_root / "hookah-ag", environment=environment) as agent:
             def manager(*arguments):
-                result = subprocess.run([str(manager_root / "Hookah-Manager.sh"), *map(str, arguments)],
+                result = subprocess.run([str(manager_root / "hookah-mg"), *map(str, arguments)],
                                         env=environment, cwd=self.caller, capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 return result.stdout
             connection = ["--target", agent.target, "--community", READ_COMMUNITY]
             for version in ("1", "2c"):
                 with self.subTest(version=version):
-                    self.assertIn("Python SNMP host agent", manager("get", *connection, "--version", version, "--oid", ".1.3.6.1.2.1.1.1.0"))
-                    self.assertIn("STRING", manager("walk", *connection, "--version", version, "--oid", ".1.3.6.1.2.1.2.2.1.2"))
-            manager("set", "--target", agent.target, "--community", WRITE_COMMUNITY, "--oid", ".1.3.6.1.2.1.1.6.0", "--type", "s", "--value", "Offline Café")
-            self.assertIn("Offline Café", manager("get", *connection, "--oid", ".1.3.6.1.2.1.1.6.0"))
+                    self.assertIn("Python SNMP host agent", manager("--get", *connection, "--snmp-version", version, "--oid", ".1.3.6.1.2.1.1.1.0"))
+                    self.assertIn("STRING", manager("--walk", *connection, "--snmp-version", version, "--oid", ".1.3.6.1.2.1.2.2.1.2"))
+            manager("--set", "--target", agent.target, "--community", WRITE_COMMUNITY, "--oid", ".1.3.6.1.2.1.1.6.0", "--type", "s", "--value", "Offline Café")
+            self.assertIn("Offline Café", manager("--get", *connection, "--oid", ".1.3.6.1.2.1.1.6.0"))
             csv = agent.path / "cpu.csv"
-            manager("capture", *connection, "--oid", ".1.3.6.1.2.1.25.3.3.1.2", "--duration", "0.35", "--sync-agent", "--output", csv)
+            manager("--capture", *connection, "--oid", ".1.3.6.1.2.1.25.3.3.1.2", "--duration", "0.35", "--sync-agent", "--output", csv)
             png = agent.path / "cpu.png"
-            manager("plot", csv, "--output", png, "--no-show")
+            manager("--plot", csv, "--output", png, "--no-show")
             self.assertEqual(png.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
-            manager("keys", "generate", "--directory", agent.path / "keys", "--bits", "2048")
+            manager("--generate-keys", "--directory", agent.path / "keys", "--bits", "2048")
 
     @unittest.skipUnless(os.name == "nt" or WINDOWS_RUNNER, "Windows or Wine is required")
     def test_windows_agent_and_manager_run_without_system_python_or_pip(self):

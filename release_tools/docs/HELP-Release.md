@@ -8,11 +8,11 @@
 Linux examples:
 
 ```sh
-./Agent/Linux/Hookah-Agent.sh setup
-./Agent/Linux/Hookah-Agent.sh
-./Manager/Linux/Hookah-Manager.sh setup
-./Manager/Linux/Hookah-Manager.sh doctor
-./Manager/Linux/Hookah-Manager.sh --help
+./Agent/Linux/hookah-ag --setup
+./Agent/Linux/hookah-ag --start
+./Manager/Linux/hookah-mg --setup
+./Manager/Linux/hookah-mg --doctor
+./Manager/Linux/hookah-mg --help
 ```
 
 Windows examples in PowerShell:

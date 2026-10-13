@@ -45,22 +45,22 @@ class LinuxLauncherTests(LauncherFixture):
         for component in ("Agent", "Manager"):
             with self.subTest(component=component):
                 root = self.install_files(component)
-                result = subprocess.run([str(root / f"Hookah-{component}.sh"), "--version"], cwd=self.caller,
+                result = subprocess.run([str(root / release.launcher_name(component, "Linux")), "--version"], cwd=self.caller,
                                         env=self.environment(), capture_output=True, text=True, timeout=15)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), f"Hookah {component} {__version__}")
 
     def test_agent_loads_its_adjacent_configuration_and_cli_override_wins(self):
         root = self.install_files("Agent")
-        launcher = root / "Hookah-Agent.sh"
-        result = subprocess.run([str(launcher), "config", "show"], cwd=self.caller, env=self.environment(),
+        launcher = root / "hookah-ag"
+        result = subprocess.run([str(launcher), "--config-show"], cwd=self.caller, env=self.environment(),
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         import json
         self.assertEqual(json.loads(result.stdout)["port"], 1161)
         custom = self.caller / "custom.json"
         custom.write_text('{"port": 22161}', encoding="utf-8")
-        result = subprocess.run([str(launcher), "config", "show", "--config", str(custom)], cwd=self.caller,
+        result = subprocess.run([str(launcher), "--config-show", "--config", str(custom)], cwd=self.caller,
                                 env=self.environment(), capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["port"], 22161)
@@ -71,7 +71,7 @@ class LinuxLauncherTests(LauncherFixture):
         local = self.caller / "snmp_manager_config.json"
         local.write_text('{"target": "caller-device"}', encoding="utf-8")
         (root / "config.json").write_text('{"target": "package-device"}', encoding="utf-8")
-        result = subprocess.run([str(root / "Hookah-Manager.sh"), "config", "show"], cwd=self.caller,
+        result = subprocess.run([str(root / "hookah-mg"), "--config-show"], cwd=self.caller,
                                 env=self.environment(), capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["target"], "package-device")
@@ -81,33 +81,33 @@ class LinuxLauncherTests(LauncherFixture):
         python.chmod(0o755)
         environment = self.environment()
         environment.pop("HOOKAH_PYTHON")
-        result = subprocess.run([str(root / "Hookah-Manager.sh"), "--version"], cwd=self.caller,
+        result = subprocess.run([str(root / "hookah-mg"), "--version"], cwd=self.caller,
                                 env=environment, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(__version__, result.stdout)
 
     def test_launchers_preserve_usage_error_and_missing_interpreter_exit_codes(self):
         root = self.install_files("Manager")
-        result = subprocess.run([str(root / "Hookah-Manager.sh"), "get", "--no-config"], cwd=self.caller,
+        result = subprocess.run([str(root / "hookah-mg"), "--get", "--no-config"], cwd=self.caller,
                                 env=self.environment(), capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 2)
         environment = self.environment()
         environment["HOOKAH_PYTHON"] = str(self.path / "missing python")
-        result = subprocess.run([str(root / "Hookah-Manager.sh"), "--version"], cwd=self.caller,
+        result = subprocess.run([str(root / "hookah-mg"), "--version"], cwd=self.caller,
                                 env=environment, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 127)
 
     def test_user_help_names_the_public_launcher_and_creates_no_python_clutter(self):
         root = self.install_files("Manager")
-        for arguments in (["--help"], ["help", "get"]):
+        for arguments in (["--help"], []):
             with self.subTest(arguments=arguments):
-                result = subprocess.run([str(root / "Hookah-Manager.sh"), *arguments], cwd=self.caller,
+                result = subprocess.run([str(root / "hookah-mg"), *arguments], cwd=self.caller,
                                         env=self.environment(), capture_output=True, text=True, timeout=15)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("Hookah-Manager.sh", result.stdout)
+                self.assertIn("hookah-mg", result.stdout)
                 self.assertNotIn("snmp_data_collector_v12.py", result.stdout)
         self.assertEqual({path.name for path in root.iterdir() if not path.name.startswith(".")},
-                         {"Hookah-Manager.sh", "README.md", "HELP.md", "config.json"})
+                          {"hookah-mg", "README.md", "HELP.md", "config.json"})
 
 
 @unittest.skipUnless(os.name == "nt" or WINDOWS_RUNNER, "Windows .exe execution requires Windows or Wine")

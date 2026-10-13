@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import unittest
 
+import build_release as release
 from tests.helpers import READ_COMMUNITY, WRITE_COMMUNITY, RunningAgent
 from tests.test_launchers import LauncherFixture
 
@@ -16,15 +17,16 @@ class PackagedIntegrationTests(LauncherFixture):
 
     def test_public_launchers_use_visible_profiles_for_real_get_set_capture_and_plot(self):
         platform = "Windows" if os.name == "nt" else "Linux"
-        extension = "exe" if os.name == "nt" else "sh"
         agent_root = self.install_files("Agent", platform)
         manager_root = self.install_files("Manager", platform)
-        launcher = manager_root / f"Hookah-Manager.{extension}"
-        with RunningAgent(sample_interval=0.1, launcher=agent_root / f"Hookah-Agent.{extension}") as agent:
+        launcher = manager_root / release.launcher_name("Manager", platform)
+        with RunningAgent(sample_interval=0.1, launcher=agent_root / release.launcher_name("Agent", platform)) as agent:
             profile = manager_root / "config.json"
             profile.write_text(json.dumps({"target": agent.target, "community": READ_COMMUNITY}), encoding="utf-8")
 
             def run(*arguments):
+                if platform == "Linux":
+                    arguments = ("--" + arguments[0], *arguments[1:])
                 result = subprocess.run([str(launcher), *map(str, arguments)], cwd=self.caller,
                                         env=self.environment(), capture_output=True, text=True, timeout=15)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -41,4 +43,4 @@ class PackagedIntegrationTests(LauncherFixture):
             self.assertEqual(image.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
         for component, root in (("Agent", agent_root), ("Manager", manager_root)):
             self.assertEqual({path.name for path in root.iterdir() if not path.name.startswith(".")},
-                             {f"Hookah-{component}.{extension}", "README.md", "HELP.md", "config.json"})
+                              {release.launcher_name(component, platform), "README.md", "HELP.md", "config.json"})

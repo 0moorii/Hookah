@@ -37,10 +37,12 @@ SOURCE_FILES = tuple(sorted(set(AGENT_FILES + MANAGER_FILES))) + (
     "build_release.py", "build_agent_package.py", "run_tests.py", "smoke_test.py",
     "hookah-agent", "hookah-manager", "Hookah-Agent.cmd", "Hookah-Manager.cmd", "Setup-Agent.cmd", "Setup-Manager.cmd",
     "windows/setup-common.ps1", "windows/setup-agent.ps1", "windows/setup-manager.ps1",
+    "LINUX-CLI.md",
 )
 EXECUTABLE_FILES = {
     "hookah-agent", "hookah-manager", "snmp_agent.py", "snmp_agent_windows_service.py",
     "snmp_data_collector_v12.py", "build_release.py", "build_agent_package.py", "run_tests.py", "smoke_test.py",
+    "hookah-ag", "hookah-mg",
 }
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 METADATA_DIRECTORY = ".hookah/metadata"
@@ -76,9 +78,15 @@ def source_entries(files, source=ROOT):
     return entries
 
 
+def launcher_name(component, platform):
+    return ("hookah-ag" if component == "Agent" else "hookah-mg") if platform == "Linux" else f"Hookah-{component}.exe"
+
+
 def render_document(name, component, platform, source=ROOT):
-    launcher = f"Hookah-{component}.{'sh' if platform == 'Linux' else 'exe'}"
+    launcher = launcher_name(component, platform)
     command = ("./" if platform == "Linux" else ".\\") + launcher
+    if platform == "Linux" and component in ("Agent", "Manager"):
+        name = name.removesuffix(".md") + "-Linux.md"
     text = (Path(source) / "release_tools" / "docs" / name).read_text(encoding="utf-8")
     for token, value in {"@VERSION@": __version__, "@PLATFORM@": platform,
                          "@LAUNCHER@": launcher, "@COMMAND@": command}.items():
@@ -126,7 +134,15 @@ def component_entries(component, source=ROOT, platform="Windows", *, bundle_runt
     entries["HELP.md"] = render_document(f"HELP-{component}.md", component, platform, source)
     entries[".hookah/docs/THIRD-PARTY.md"] = (Path(source) / "release_tools/docs/THIRD-PARTY.md").read_bytes()
     if platform == "Linux":
-        launcher = f"Hookah-{component}.sh"
+        launcher = launcher_name(component, platform)
+        entries[".hookah/app/hookah_runtime.py"] = entries[".hookah/launcher.py"]
+        entries[".hookah/launcher.py"] = (Path(source) / "release_tools/linux_cli.py").read_bytes()
+        entries[".hookah/docs/LINUX-CLI.md"] = (Path(source) / "LINUX-CLI.md").read_bytes()
+        guide = ".hookah/docs/README-" + component.lower() + ".md"
+        entries[guide] = (f"> Linux packages use `{launcher}` parameters. See `LINUX-CLI.md` for the current Linux interface; "
+                         "direct-script and Windows examples below remain available in their respective environments.\n\n").encode("utf-8") + entries[guide]
+        if component == "Manager":
+            entries[".hookah/config/agents.json"] = b'{"agents": []}\n'
         template = (Path(source) / "release_tools" / "launchers" / "linux.sh.in").read_text(encoding="utf-8")
         entries[launcher] = template.replace("@LAUNCHER@", launcher).encode("utf-8")
     else:
@@ -196,7 +212,7 @@ def verify_archive(path):
             raise ValueError("The ZIP checksum inventory does not match its contents.")
         if manifest.get("platform") in PLATFORMS:
             component, platform = manifest["component"], manifest["platform"]
-            launcher = f"Hookah-{component}.{'sh' if platform == 'Linux' else 'exe'}"
+            launcher = launcher_name(component, platform)
             root_files = {name[len(prefix):] for name in names if "/" not in name[len(prefix):]}
             if root_files != {launcher, "README.md", "HELP.md", "config.json"}:
                 raise ValueError("A component ZIP must expose only its launcher, README, help, and config.")

@@ -11,16 +11,16 @@ Choose the package for your application and operating system:
 
 | File in `dist/` | Public launcher |
 | --- | --- |
-| `Hookah-Agent-Linux-1.0.0-2.zip` | `Hookah-Agent.sh` |
+| `Hookah-Agent-Linux-1.0.0-2.zip` | `hookah-ag` |
 | `Hookah-Agent-Windows-1.0.0-2.zip` | `Hookah-Agent.exe` |
-| `Hookah-Manager-Linux-1.0.0-2.zip` | `Hookah-Manager.sh` |
+| `Hookah-Manager-Linux-1.0.0-2.zip` | `hookah-mg` |
 | `Hookah-Manager-Windows-1.0.0-2.zip` | `Hookah-Manager.exe` |
 | `Hookah-1.0.0-2.zip` | Both applications, grouped into `Agent/Linux`, `Agent/Windows`, `Manager/Linux`, and `Manager/Windows`. |
 
 Each component ZIP exposes exactly **four files**:
 
 ```text
-Hookah-Agent.sh       # or the selected component's .exe/.sh
+hookah-ag            # hookah-mg for Manager; the selected .exe on Windows
 README.md
 HELP.md
 config.json
@@ -48,6 +48,8 @@ verification command, and `--snmp-bin` can select existing external Net-SNMP too
 
 ## Documentation
 
+- Linux packages use parameter-only commands, saved Agent lists, and optional PATH installation: [Linux CLI](LINUX-CLI.md).
+- `hookah-ag` starts the Agent; `hookah-mg` prints parameter help. Windows menus and commands remain unchanged.
 - Each extracted package has its own `README.md` and `HELP.md`.
 - Detailed runtime guides are grouped under `.hookah/docs/`.
 - In this developer project: [Agent guide](README-agent.md), [Manager guide](README-manager.md),

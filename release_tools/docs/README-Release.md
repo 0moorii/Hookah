@@ -4,10 +4,10 @@ The release is grouped by application and operating system:
 
 ```text
 Agent/
-  Linux/          Hookah-Agent.sh, README.md, HELP.md, config.json
+  Linux/          hookah-ag, README.md, HELP.md, config.json
   Windows/        Hookah-Agent.exe, README.md, HELP.md, config.json
 Manager/
-  Linux/          Hookah-Manager.sh, README.md, HELP.md, config.json
+  Linux/          hookah-mg, README.md, HELP.md, config.json
   Windows/        Hookah-Manager.exe, README.md, HELP.md, config.json
 README.md
 HELP.md
