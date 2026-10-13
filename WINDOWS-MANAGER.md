@@ -1,6 +1,6 @@
 # Hookah Manager on Windows 10/11 x64
 
-Extract `Hookah-Manager-Windows-1.0.0-2.zip` into its own directory. The visible
+Extract `Hookah-Windows-1.0.0-2.zip` and enter its `Manager/` directory. The visible
 files are **Hookah-Manager.exe**, **README.md**, **HELP.md**, and **config.json**.
 The native console executable keeps application files in the hidden `.hookah/`
 support tree and supports paths containing spaces and Unicode characters.

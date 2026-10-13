@@ -134,28 +134,85 @@ class ReleasePackageTests(unittest.TestCase):
                     self.assertNotIn(b"developer-local-secret", archive.read("config.json"))
                     self.assertNotIn("private.pem", archive.namelist())
 
-    def test_combined_release_includes_both_packages_source_tests_and_validation(self):
+    def test_release_contains_exactly_two_single_platform_agent_manager_archives(self):
         outputs = release.build_release(self.path / "dist", passing_reports())
-        for component in ("Agent", "Manager"):
-            for platform in release.PLATFORMS:
-                self.assertIn(f"Hookah-{component}-{platform}-{__version__}.zip", [output.name for output in outputs])
-        self.assertEqual(outputs[-1].name, f"Hookah-{__version__}.zip")
-        prefix = f"Hookah-{__version__}/"
-        with zipfile.ZipFile(outputs[-1]) as archive:
-            for component in ("Agent", "Manager"):
-                for platform in release.PLATFORMS:
-                    location = prefix + f"{component}/{platform}/"
+        expected = [f"Hookah-{platform}-{__version__}.zip" for platform in release.PLATFORMS]
+        self.assertEqual([output.name for output in outputs], expected)
+        self.assertEqual(sorted(path.name for path in (self.path / "dist").glob("*.zip")), sorted(expected))
+        for platform, output in zip(release.PLATFORMS, outputs):
+            prefix = f"Hookah-{platform}-{__version__}/"
+            manifest = release.verify_archive(output)
+            self.assertEqual(manifest["component"], "Release")
+            self.assertEqual(manifest["platform"], platform)
+            with zipfile.ZipFile(output) as archive:
+                for component in ("Agent", "Manager"):
+                    location = prefix + component + "/"
                     self.assertIn(location + release.launcher_name(component, platform), archive.namelist())
                     self.assertIn(location + "config.json", archive.namelist())
-            self.assertIn(prefix + ".hookah/source/tests/test_manager_cli.py", archive.namelist())
-            self.assertIn(prefix + ".hookah/source/smoke_test.py", archive.namelist())
-            self.assertIn(prefix + ".hookah/source/build_release.py", archive.namelist())
-            self.assertEqual(json.loads(archive.read(prefix + ".hookah/metadata/VALIDATION.json")), passing_reports())
-            self.assertEqual({name[len(prefix):] for name in archive.namelist() if "/" not in name[len(prefix):]}, {"README.md", "HELP.md"})
+                    component_metadata = json.loads(archive.read(location + ".hookah/metadata/component.json"))
+                    self.assertEqual(component_metadata["platform"], platform)
+                self.assertIn(prefix + ".hookah/source/tests/test_manager_cli.py", archive.namelist())
+                self.assertIn(prefix + ".hookah/source/smoke_test.py", archive.namelist())
+                self.assertIn(prefix + ".hookah/source/build_release.py", archive.namelist())
+                self.assertEqual(json.loads(archive.read(prefix + ".hookah/metadata/VALIDATION.json")), passing_reports())
+                self.assertEqual({name[len(prefix):] for name in archive.namelist() if "/" not in name[len(prefix):]}, {"README.md", "HELP.md"})
+                if platform == "Linux":
+                    self.assertFalse(any(name.lower().endswith(".exe") for name in archive.namelist()))
+                else:
+                    self.assertIn(prefix + ".hookah/source/build/windows/Hookah-Agent.exe", archive.namelist())
         checksums = (self.path / "dist" / "SHA256SUMS").read_text(encoding="utf-8")
         for output in outputs:
             release.verify_archive(output)
             self.assertIn(f"{release.sha256(output.read_bytes())}  {output.name}", checksums)
+
+    def platform_entries(self, manager_platform="Linux"):
+        entries = {"README.md": b"platform guide", "HELP.md": b"platform help"}
+        for component, platform in (("Agent", "Linux"), ("Manager", manager_platform)):
+            package = release.with_manifest(release.component_entries(component, platform=platform), component, platform)
+            entries.update({component + "/" + name: data for name, data in package.items()})
+        return entries
+
+    def test_platform_release_rejects_mixed_operating_systems(self):
+        with self.assertRaisesRegex(ValueError, "cannot mix Linux and Windows"):
+            release.write_archive(self.path / "mixed.zip", self.platform_entries("Windows"), "Release", platform="Linux")
+        self.assertFalse((self.path / "mixed.zip").exists())
+
+    def test_linux_release_rejects_windows_executables_in_its_source_snapshot(self):
+        entries = self.platform_entries()
+        entries[".hookah/source/build/windows/unwanted.exe"] = b"MZ fixture"
+        with self.assertRaisesRegex(ValueError, "cannot include Windows executables"):
+            release.write_archive(self.path / "mixed-source.zip", entries, "Release", platform="Linux")
+        self.assertFalse((self.path / "mixed-source.zip").exists())
+
+    def test_platform_release_validates_nested_component_checksums(self):
+        entries = self.platform_entries()
+        entries["Agent/.hookah/metadata/SHA256SUMS"] = b"incorrect nested checksum inventory"
+        with self.assertRaisesRegex(ValueError, "checksum inventory"):
+            release.write_archive(self.path / "bad-nested.zip", entries, "Release", platform="Linux")
+        self.assertFalse((self.path / "bad-nested.zip").exists())
+
+    def test_linux_packages_exclude_unused_windows_pip_launchers_and_update_inventory(self):
+        folder = self.path / "runtime-fixtures/Linux/Agent"
+        python = folder / "environment/bin/python"
+        windows = folder / "environment/lib/python3.12/site-packages/pip/_vendor/distlib/t64.exe"
+        python.parent.mkdir(parents=True, exist_ok=True)
+        windows.parent.mkdir(parents=True, exist_ok=True)
+        python.write_bytes(b"Linux interpreter fixture")
+        windows.write_bytes(b"MZ unused Windows pip launcher")
+        relative = windows.relative_to(folder / "environment").as_posix()
+        metadata = {"files": {"bin/python": release.sha256(python), relative: release.sha256(windows)},
+                    "executables": ["bin/python", relative]}
+        (folder / "BUNDLE.json").write_text(json.dumps(metadata), encoding="utf-8")
+        original = (folder / "BUNDLE.json").read_bytes()
+        with mock.patch.object(release, "ensure_bundle", return_value=folder):
+            entries = release.component_entries("Agent", platform="Linux")
+        self.assertNotIn(".hookah/environment/" + relative, entries)
+        inventory = json.loads(entries[".hookah/metadata/BUNDLE.json"])
+        self.assertNotIn(relative, inventory["files"])
+        self.assertNotIn(relative, inventory["executables"])
+        self.assertEqual(inventory["excluded_windows_launchers"], [relative])
+        self.assertEqual((folder / "BUNDLE.json").read_bytes(), original)
+        release.write_archive(self.path / "filtered-linux.zip", entries, "Agent", platform="Linux")
 
     def test_missing_inputs_do_not_overwrite_an_existing_output(self):
         output = self.path / "existing.zip"

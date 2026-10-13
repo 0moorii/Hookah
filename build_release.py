@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Hookah, then build separate Agent/Manager ZIPs and a versioned release."""
+"""Verify Hookah, then build one Agent/Manager release ZIP per operating system."""
 
 import argparse
 import hashlib
@@ -79,7 +79,9 @@ def source_entries(files, source=ROOT):
 
 
 def launcher_name(component, platform):
-    return ("hookah-ag" if component == "Agent" else "hookah-mg") if platform == "Linux" else f"Hookah-{component}.exe"
+    if platform == "Linux":
+        return {"Agent": "hookah-ag", "Manager": "hookah-mg"}.get(component, f"Hookah-{component}.sh")
+    return f"Hookah-{component}.exe"
 
 
 def render_document(name, component, platform, source=ROOT):
@@ -89,7 +91,14 @@ def render_document(name, component, platform, source=ROOT):
         name = name.removesuffix(".md") + "-Linux.md"
     text = (Path(source) / "release_tools" / "docs" / name).read_text(encoding="utf-8")
     for token, value in {"@VERSION@": __version__, "@PLATFORM@": platform,
-                         "@LAUNCHER@": launcher, "@COMMAND@": command}.items():
+                         "@LAUNCHER@": launcher, "@COMMAND@": command,
+                         "@AGENT_LAUNCHER@": launcher_name("Agent", platform),
+                         "@MANAGER_LAUNCHER@": launcher_name("Manager", platform),
+                         "@AGENT_COMMAND@": ("./Agent/" if platform == "Linux" else ".\\Agent\\") + launcher_name("Agent", platform),
+                         "@MANAGER_COMMAND@": ("./Manager/" if platform == "Linux" else ".\\Manager\\") + launcher_name("Manager", platform),
+                         "@SETUP@": "--setup" if platform == "Linux" else "setup",
+                         "@DOCTOR@": "--doctor" if platform == "Linux" else "doctor",
+                         "@VERSION_FLAG@": "-v" if platform == "Linux" else "--version"}.items():
         text = text.replace(token, value)
     return text.encode("utf-8")
 
@@ -151,10 +160,23 @@ def component_entries(component, source=ROOT, platform="Windows", *, bundle_runt
         inspect_pe(entries[f"Hookah-{component}.exe"])
     if bundle_runtime:
         bundle = ensure_bundle(component, platform, source)
+        excluded = []
         for path in sorted((bundle / "environment").rglob("*")):
             if path.is_file():
-                entries[".hookah/environment/" + path.relative_to(bundle / "environment").as_posix()] = path
-        entries[METADATA_DIRECTORY + "/BUNDLE.json"] = (bundle / "BUNDLE.json").read_bytes()
+                relative = path.relative_to(bundle / "environment").as_posix()
+                if platform == "Linux" and path.suffix.lower() == ".exe":
+                    excluded.append(relative)
+                    continue
+                entries[".hookah/environment/" + relative] = path
+        metadata = (bundle / "BUNDLE.json").read_bytes()
+        if excluded:
+            record = json.loads(metadata)
+            # Pip's Windows launcher resources are not used by the Linux interpreter.
+            record["files"] = {name: digest for name, digest in record["files"].items() if name not in excluded}
+            record["executables"] = [name for name in record.get("executables", []) if name not in excluded]
+            record["excluded_windows_launchers"] = excluded
+            metadata = (json.dumps(record, indent=2) + "\n").encode("utf-8")
+        entries[METADATA_DIRECTORY + "/BUNDLE.json"] = metadata
     return entries
 
 
@@ -170,6 +192,54 @@ def with_manifest(entries, component, platform=None):
     entries[METADATA_DIRECTORY + "/MANIFEST.json"] = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
     entries[METADATA_DIRECTORY + "/SHA256SUMS"] = "".join(f"{sha256(data)}  {name}\n" for name, data in sorted(entries.items())).encode("utf-8")
     return entries
+
+
+def verify_manifest(archive, manifest_path):
+    manifest_path = PurePosixPath(manifest_path)
+    parent = manifest_path.parents[2]
+    prefix = "" if str(parent) == "." else str(parent) + "/"
+    manifest = json.loads(archive.read(str(manifest_path)))
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), dict):
+        raise ValueError("The ZIP manifest must contain a file inventory.")
+    if manifest["version"] != __version__:
+        raise ValueError("ZIP release version does not match the application version.")
+    checksum_path = prefix + METADATA_DIRECTORY + "/SHA256SUMS"
+    expected = {prefix + name for name in manifest["files"]} | {str(manifest_path), checksum_path}
+    names = {name for name in archive.namelist() if name.startswith(prefix) and name != prefix}
+    if names != expected:
+        raise ValueError("ZIP contents do not match its manifest inventory.")
+    for name, digest in manifest["files"].items():
+        if sha256(archive.read(prefix + name)) != digest:
+            raise ValueError(f"ZIP SHA-256 check failed: {name}")
+    checksums = "".join(f"{sha256(archive.read(name))}  {name[len(prefix):]}\n"
+                        for name in sorted(expected - {checksum_path}))
+    if archive.read(checksum_path).decode("utf-8") != checksums:
+        raise ValueError("The ZIP checksum inventory does not match its contents.")
+    return manifest, prefix
+
+
+def verify_component_layout(archive, manifest, prefix):
+    component, platform = manifest["component"], manifest["platform"]
+    names = {name for name in archive.namelist() if name.startswith(prefix) and name != prefix}
+    launcher = launcher_name(component, platform)
+    root_files = {name[len(prefix):] for name in names if "/" not in name[len(prefix):]}
+    if root_files != {launcher, "README.md", "HELP.md", "config.json"}:
+        raise ValueError("A component ZIP must expose only its launcher, README, help, and config.")
+    if any(name.endswith(".py") and not name[len(prefix):].startswith(".hookah/") for name in names):
+        raise ValueError("Python implementation files must stay inside the support folder.")
+    metadata = json.loads(archive.read(prefix + METADATA_DIRECTORY + "/component.json"))
+    if any(metadata.get(name) != manifest.get(name) for name in ("component", "platform", "version")):
+        raise ValueError("Component metadata does not match its manifest.")
+    if platform == "Windows":
+        inspect_pe(archive.read(prefix + launcher))
+    if prefix + METADATA_DIRECTORY + "/BUNDLE.json" in names:
+        bundle = json.loads(archive.read(prefix + METADATA_DIRECTORY + "/BUNDLE.json"))
+        interpreter = "python.exe" if platform == "Windows" else "bin/python"
+        if prefix + ".hookah/environment/" + interpreter not in names:
+            raise ValueError("The bundled Python interpreter is missing.")
+        for name, digest in bundle["files"].items():
+            if manifest["files"].get(".hookah/environment/" + name) != digest:
+                raise ValueError("The packaged runtime does not match its dependency inventory.")
 
 
 def verify_archive(path):
@@ -191,43 +261,21 @@ def verify_archive(path):
         manifests = [path for path in manifests if len(path.parts) == shallowest]
         if len(manifests) != 1:
             raise ValueError("A ZIP must contain exactly one root manifest.")
-        manifest_path = manifests[0]
-        parent = manifest_path.parents[2]
-        prefix = "" if str(parent) == "." else str(parent) + "/"
-        manifest = json.loads(archive.read(str(manifest_path)))
-        if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), dict):
-            raise ValueError("The ZIP manifest must contain a file inventory.")
-        if manifest["version"] != __version__:
-            raise ValueError("ZIP release version does not match the application version.")
-        checksum_path = prefix + METADATA_DIRECTORY + "/SHA256SUMS"
-        expected = {prefix + name for name in manifest["files"]} | {str(manifest_path), checksum_path}
-        if set(names) != expected:
-            raise ValueError("ZIP contents do not match its manifest inventory.")
-        for name, digest in manifest["files"].items():
-            if sha256(archive.read(prefix + name)) != digest:
-                raise ValueError(f"ZIP SHA-256 check failed: {name}")
-        checksums = "".join(f"{sha256(archive.read(name))}  {name[len(prefix):]}\n"
-                            for name in sorted(expected - {checksum_path}))
-        if archive.read(checksum_path).decode("utf-8") != checksums:
-            raise ValueError("The ZIP checksum inventory does not match its contents.")
-        if manifest.get("platform") in PLATFORMS:
-            component, platform = manifest["component"], manifest["platform"]
-            launcher = launcher_name(component, platform)
-            root_files = {name[len(prefix):] for name in names if "/" not in name[len(prefix):]}
-            if root_files != {launcher, "README.md", "HELP.md", "config.json"}:
-                raise ValueError("A component ZIP must expose only its launcher, README, help, and config.")
-            if any(name.endswith(".py") and not name[len(prefix):].startswith(".hookah/") for name in names):
-                raise ValueError("Python implementation files must stay inside the support folder.")
-            if platform == "Windows":
-                inspect_pe(archive.read(prefix + launcher))
-            if prefix + METADATA_DIRECTORY + "/BUNDLE.json" in names:
-                bundle = json.loads(archive.read(prefix + METADATA_DIRECTORY + "/BUNDLE.json"))
-                interpreter = "python.exe" if platform == "Windows" else "bin/python"
-                if prefix + ".hookah/environment/" + interpreter not in names:
-                    raise ValueError("The bundled Python interpreter is missing.")
-                for name, digest in bundle["files"].items():
-                    if manifest["files"].get(".hookah/environment/" + name) != digest:
-                        raise ValueError("The packaged runtime does not match its dependency inventory.")
+        manifest, prefix = verify_manifest(archive, manifests[0])
+        platform = manifest.get("platform")
+        if platform in PLATFORMS and manifest.get("component") in ("Agent", "Manager"):
+            verify_component_layout(archive, manifest, prefix)
+        elif platform in PLATFORMS and manifest.get("component") == "Release":
+            roots = {PurePosixPath(name[len(prefix):]).parts[0] for name in names if name.startswith(prefix) and name != prefix}
+            if roots != {"Agent", "Manager", "README.md", "HELP.md", ".hookah"}:
+                raise ValueError("A platform release must contain only Agent, Manager, README, HELP, and hidden support files.")
+            for component in ("Agent", "Manager"):
+                child, child_prefix = verify_manifest(archive, prefix + component + "/" + METADATA_DIRECTORY + "/MANIFEST.json")
+                if child.get("component") != component or child.get("platform") != platform:
+                    raise ValueError("A platform release cannot mix Linux and Windows packages.")
+                verify_component_layout(archive, child, child_prefix)
+            if platform == "Linux" and any(name.lower().endswith(".exe") for name in names):
+                raise ValueError("A Linux release cannot include Windows executables.")
         return manifest
 
 
@@ -300,30 +348,30 @@ def build_release(output_directory, validation, source=ROOT):
             if path.is_file() and "__pycache__" not in path.parts:
                 project[path.relative_to(source).as_posix()] = path.read_bytes()
     binaries = ensure_windows_launchers(source)
-    for path in (*binaries.values(), source / "build" / "windows" / "BUILD.json"):
-        project[path.relative_to(source).as_posix()] = path.read_bytes()
     variants = {(component, platform): component_entries(component, source, platform)
                 for component in ("Agent", "Manager") for platform in PLATFORMS}
     for name in ("snmp_agent_config.json", "snmp_manager_config.json"):
         project[name] = variants[("Agent" if name.startswith("snmp_agent") else "Manager", "Linux")]["config.json"]
     project["VERSION"] = (__version__ + "\n").encode("ascii")
     packages = []
-    for (component, platform), entries in variants.items():
-        packages.append(write_archive(output_directory / f"Hookah-{component}-{platform}-{__version__}.zip", entries, component, platform=platform))
-    # Previous download names resolve to the same clean Windows package layout.
-    for component, name in (("Agent", f"Hookah-Agent-{__version__}.zip"),
-                            ("Manager", f"Hookah-Manager-{__version__}.zip"), ("Agent", "Hookah-Agent-Windows.zip")):
-        packages.append(write_archive(output_directory / name, variants[(component, "Windows")], component, platform="Windows"))
     validation_bytes = (json.dumps(validation, indent=2) + "\n").encode("utf-8")
-    bundle = {}
-    for (component, platform), entries in variants.items():
-        bundle.update({f"{component}/{platform}/" + name: data for name, data in with_manifest(entries, component, platform).items()})
-    bundle["README.md"] = render_document("README-Release.md", "Release", "Linux", source)
-    bundle["HELP.md"] = render_document("HELP-Release.md", "Release", "Linux", source)
-    bundle[METADATA_DIRECTORY + "/VALIDATION.json"] = validation_bytes
-    bundle[METADATA_DIRECTORY + "/VERSION"] = project["VERSION"]
-    bundle.update({".hookah/source/" + name: data for name, data in project.items()})
-    packages.append(write_archive(output_directory / f"Hookah-{__version__}.zip", bundle, "Release", prefix=f"Hookah-{__version__}/"))
+    # Each release archive contains both components for one platform only; legacy aliases are no longer generated.
+    for platform in PLATFORMS:
+        bundle = {}
+        for component in ("Agent", "Manager"):
+            entries = with_manifest(variants[(component, platform)], component, platform)
+            bundle.update({component + "/" + name: data for name, data in entries.items()})
+        platform_project = dict(project)
+        if platform == "Windows":
+            for path in (*binaries.values(), source / "build" / "windows" / "BUILD.json"):
+                platform_project[path.relative_to(source).as_posix()] = path.read_bytes()
+        bundle["README.md"] = render_document("README-Release.md", "Release", platform, source)
+        bundle["HELP.md"] = render_document("HELP-Release.md", "Release", platform, source)
+        bundle[METADATA_DIRECTORY + "/VALIDATION.json"] = validation_bytes
+        bundle[METADATA_DIRECTORY + "/VERSION"] = project["VERSION"]
+        bundle.update({".hookah/source/" + name: data for name, data in platform_project.items()})
+        name = f"Hookah-{platform}-{__version__}"
+        packages.append(write_archive(output_directory / (name + ".zip"), bundle, "Release", prefix=name + "/", platform=platform))
     (output_directory / "VALIDATION.json").write_bytes(validation_bytes)
     checksums = "".join(f"{sha256(package.read_bytes())}  {package.name}\n" for package in packages)
     (output_directory / "SHA256SUMS").write_text(checksums, encoding="utf-8")
@@ -363,7 +411,7 @@ def main(argv=None):
         validation = run_verification(python=args.python)
         for package in build_release(args.output_directory, validation):
             print(package)
-        print(f"Release {__version__} verified; grouped platform ZIPs, SHA256SUMS, and VALIDATION.json written.")
+        print(f"Release {__version__} verified; exactly two OS ZIPs, SHA256SUMS, and VALIDATION.json written.")
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, zipfile.BadZipFile) as exc:
         print(f"Release failed: {exc}", file=sys.stderr)
         return 1

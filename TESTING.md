@@ -1,8 +1,8 @@
 # Agent and Manager testing environment
 
-Use the source project, or `Hookah-1.0.0-2/.hookah/source/` from the combined release ZIP.
-Standalone component ZIPs contain runtime files and deployment guides; the full
-source release supplies the tests and release builder.
+Use the source project, or `.hookah/source/` inside either platform release ZIP.
+Each operating-system archive contains Agent and Manager runtime folders, the
+developer source, tests, and release builder.
 
 Python 3.10+ is required. Tests use standard-library **unittest**, PySNMP, psutil,
 cryptography, and Matplotlib for headless manager plot verification. Real integration tests
@@ -41,8 +41,10 @@ source .venv-test/bin/activate
 
 `make windows-launchers` compiles genuine Windows x64 console executables before
 launcher/package tests. Set `HOOKAH_WINDOWS_CC` to an explicit MinGW compiler.
-The combined source release includes the verified binary cache under
+The Windows source release includes the verified binary cache under
 `build/windows/`; it is reused while its source fingerprints and hashes match.
+The Linux archive excludes Windows executables; rebuilding Windows launchers
+there requires a MinGW compiler.
 Native Windows executable tests run on Windows or Wine. Set `HOOKAH_WINE` to
 an explicit Wine executable when it is not on PATH. Wine-related environment
 variables are inherited by the runner; `windows_launcher_runner` in validation
@@ -64,7 +66,7 @@ before integration runs. It uses the Agg plot backend and a temporary Matplotlib
 cache. Agents bind dynamically selected unprivileged loopback UDP ports;
 configurations, captured CSVs, persisted settings, and PNGs are temporary.
 
-`./Hookah-Manager.sh doctor` or `Hookah-Manager.exe doctor` diagnoses the packaged Manager's dependencies without
+`./hookah-mg --doctor` or `Hookah-Manager.exe doctor` diagnoses the packaged Manager's dependencies without
 starting an Agent. `smoke_test.py` starts a disposable loopback Agent and checks
 the real Manager's profile-based GET/WALK, CPU/RAM aggregation, authorized SET and
 read-back, short synchronized capture, headless plot/comparison, and remote Agent
@@ -79,8 +81,8 @@ python -B build_release.py --output-directory dist
 ```
 
 The builder runs unit and integration suites and the smoke test before writing
-four platform-specific Agent/Manager ZIPs and the grouped combined release.
-It also refreshes the previous Windows ZIP aliases. It checks every archive's
+exactly two OS-specific ZIPs, each containing both Agent and Manager. It never
+creates a mixed-OS archive or legacy component aliases. It checks every archive's
 CRC and SHA-256 manifest and writes `dist/VALIDATION.json` plus `dist/SHA256SUMS`.
 Run `sha256sum -c SHA256SUMS` inside `dist/` to verify the standalone downloads.
 The individual runner accepts `--report PATH` to save its actual results as JSON.

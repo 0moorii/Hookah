@@ -1,6 +1,7 @@
 # Hookah Agent @VERSION@ — Linux
 
-The Agent runs on the monitored device. Its Linux command is **hookah-ag**.
+The Agent runs on the monitored device. Enter the release's `Agent/` folder;
+its Linux command is **hookah-ag**.
 All operations use parameters; there is no numbered menu.
 
 ```text

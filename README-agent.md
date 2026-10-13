@@ -2,11 +2,11 @@
 
 ## Packaged CLI entrypoints
 
-For end-user deployment, extract `Hookah-Agent-Linux-1.0.0-2.zip` or
-`Hookah-Agent-Windows-1.0.0-2.zip`. Its visible files are `Hookah-Agent.sh` or
+For end-user deployment, extract `Hookah-Linux-1.0.0-2.zip` or
+`Hookah-Windows-1.0.0-2.zip`, then enter its `Agent/` folder. Its visible files are `hookah-ag` or
 `Hookah-Agent.exe`, `README.md`, `HELP.md`, and `config.json`. Run the launcher
 directly after extraction; portable Python and the installed dependencies are
-included. `setup` is only an optional offline check. Code, dependencies, advanced guides,
+included. `--setup` on Linux or `setup` on Windows is only an optional offline check. Code, dependencies, advanced guides,
 and service scripts are grouped under `.hookah/`. The examples below also cover
 direct use from the developer source project; in a package, replace the script
 entrypoint with the public launcher and use the visible `config.json` profile.
@@ -67,7 +67,7 @@ chmod +x snmp_agent.py
 On Windows, use `py -3 -m venv .venv` and `.venv\Scripts\python.exe` for subsequent
 Python commands.
 
-Packaged `Hookah-Agent.sh` and `Hookah-Agent.exe` select the private
+Packaged `hookah-ag` and `Hookah-Agent.exe` select the private
 `.hookah/environment` and the visible `config.json`, including when invoked
 from another directory. No dependency installation is needed. Both public
 launchers report **1.0.0-2** with `--version`.
@@ -413,7 +413,7 @@ Windows installation and native service commands are in `WINDOWS-AGENT.md`.
 ## Verification
 
 The shared Agent/Manager testing environment is documented in `TESTING.md`.
-Use the full source project (or `source/` in the combined release ZIP):
+Use the full source project (or `.hookah/source/` in either platform release ZIP):
 
 ```bash
 make setup-test

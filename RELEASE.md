@@ -2,8 +2,9 @@
 
 ## Clean, grouped distributions
 
-The Agent and Manager have separate **Linux** and **Windows x64** packages.
-Each exposes exactly one executable launcher, `README.md`, `HELP.md`, and
+There are exactly two downloads: **Linux** and **Windows x64**. Each ZIP includes
+an `Agent/` folder and a `Manager/` folder for that operating system only.
+Each component exposes exactly one executable launcher, `README.md`, `HELP.md`, and
 `config.json`. All implementation/support files are grouped in `.hookah/`:
 
 - `app/`: Python application and shared protocol/MIB modules.
@@ -28,27 +29,28 @@ Windows entrypoints and menus are unchanged.
 ## Artifacts
 
 ```text
-Hookah-Agent-Linux-1.0.0-2.zip
-Hookah-Agent-Windows-1.0.0-2.zip
-Hookah-Manager-Linux-1.0.0-2.zip
-Hookah-Manager-Windows-1.0.0-2.zip
-Hookah-1.0.0-2.zip
+Hookah-Linux-1.0.0-2.zip
+Hookah-Windows-1.0.0-2.zip
 SHA256SUMS
 VALIDATION.json
 ```
 
-The previous `Hookah-Agent-1.0.0-2.zip`, `Hookah-Manager-1.0.0-2.zip`, and
-`Hookah-Agent-Windows.zip` names are refreshed Windows-package aliases.
-The combined ZIP groups ready-to-run folders as `Agent/Linux`, `Agent/Windows`,
-`Manager/Linux`, and `Manager/Windows`. Source/tests are under `.hookah/source/`
-and release verification results under `.hookah/metadata/`.
+No component ZIP aliases or mixed Windows/Linux archive are generated. Each ZIP
+groups its two ready-to-run applications directly under `Agent/` and `Manager/`.
+Source/tests are under `.hookah/source/` and release verification results under
+`.hookah/metadata/`. Windows executable caches are not included in the Linux ZIP.
+
+The ZIPs are distributed as GitHub Release assets, not Git blobs: the Linux
+Agent/Manager archive exceeds GitHub's 100 MiB Git-file limit. Only these two ZIPs
+are uploaded; their SHA-256 digests are included in the release notes.
 
 ## Runtime
 
 Invoke the public launcher directly. Portable Python **3.12.15**, Agent modules,
 encryption, plotting libraries, and the Manager's PySNMP client backend are
 included. No Python/pip/Net-SNMP installation or network download is necessary.
-`setup` remains an optional offline check and preserves `config.json`. Windows
+`--setup` on Linux or `setup` on Windows remains an optional offline check and
+preserves `config.json`. Windows
 Agent bundles also include pywin32, allowing service installation without
 downloading dependencies. Linux targets x86-64 glibc systems with glibc 2.28+.
 Arguments, Unicode paths, spaces, quotes, and exit statuses are preserved.

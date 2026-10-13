@@ -7,20 +7,21 @@ are unchanged.
 
 ## Make the commands available on PATH
 
-From each extracted Linux package, run the corresponding command:
+From the extracted Linux release folder, install either or both commands:
 
 ```bash
-./hookah-ag --install-cli
-./hookah-mg --install-cli
+./Agent/hookah-ag --install-cli
+./Manager/hookah-mg --install-cli
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Run the Agent installation command on monitored devices and the Manager command
-on the monitoring machine. Both commands can coexist on one machine.
+on the monitoring machine. Both commands can coexist on one machine. Each
+component folder can be copied independently to another Linux machine.
 `--bin-dir PATH` selects another installation directory. Installation creates a
 symlink to the package; keep the complete extracted package in its current
 location. An existing unrelated command is never overwritten. Without PATH
-installation, use `./hookah-ag` or `./hookah-mg` inside the appropriate package.
+installation, use `./hookah-ag` or `./hookah-mg` inside the appropriate component folder.
 
 The private `.hookah/` folder contains portable Python, dependencies, application
 files, and saved agent lists. No Python, pip, or Net-SNMP installation is needed.

@@ -1,6 +1,7 @@
 # Hookah Manager @VERSION@ — Linux
 
-The Linux Manager command is **hookah-mg**. All operations use parameters.
+Enter the release's `Manager/` folder. The Linux Manager command is **hookah-mg**.
+All operations use parameters.
 Running it without parameters prints help, never a numbered menu.
 
 ```text
