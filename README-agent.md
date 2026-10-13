@@ -1,9 +1,9 @@
-# Hookah Agent 1.0.0
+# Hookah Agent 1.0.0-2
 
 ## Packaged CLI entrypoints
 
-For end-user deployment, extract `Hookah-Agent-Linux-1.0.0.zip` or
-`Hookah-Agent-Windows-1.0.0.zip`. Its visible files are `Hookah-Agent.sh` or
+For end-user deployment, extract `Hookah-Agent-Linux-1.0.0-2.zip` or
+`Hookah-Agent-Windows-1.0.0-2.zip`. Its visible files are `Hookah-Agent.sh` or
 `Hookah-Agent.exe`, `README.md`, `HELP.md`, and `config.json`. Run the launcher
 directly after extraction; portable Python and the installed dependencies are
 included. `setup` is only an optional offline check. Code, dependencies, advanced guides,
@@ -48,9 +48,8 @@ its editable/default JSON profiles, shared guides, requirements, and launchers.
 Optional authenticated **RSA/AES-GCM** traffic encryption is documented in
 `ENCRYPTION.md`. The Manager generates the PEM keys; the Agent's configuration
 explicitly references the copied private PEM for incoming packet decryption.
-The Manager displays a Shisha ASCII banner with **Hookah** below it at startup.
-The current startup screen uses a **HOOKAH** heading and dot-art Shisha, credited
-to **0moorii**. The shared extended MIB/tree, 180 OID choices, named browsing,
+The Manager displays a colored **HOOKAH** ASCII heading and startup greeting,
+credited to **0moorii**. The shared extended MIB/tree, 180 OID choices, named browsing,
 and descriptive `help` commands are documented in `MIB.md`.
 
 ## Quick start on the monitored device
@@ -71,7 +70,7 @@ Python commands.
 Packaged `Hookah-Agent.sh` and `Hookah-Agent.exe` select the private
 `.hookah/environment` and the visible `config.json`, including when invoked
 from another directory. No dependency installation is needed. Both public
-launchers report **1.0.0** with `--version`.
+launchers report **1.0.0-2** with `--version`.
 
 The supplied editable `snmp_agent_config.json` uses UDP 1161 and initially permits
 loopback queries. Configure the LAN manager without opening a text editor. For

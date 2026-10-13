@@ -1,6 +1,6 @@
 # Agent and Manager testing environment
 
-Use the source project, or `Hookah-1.0.0/.hookah/source/` from the combined release ZIP.
+Use the source project, or `Hookah-1.0.0-2/.hookah/source/` from the combined release ZIP.
 Standalone component ZIPs contain runtime files and deployment guides; the full
 source release supplies the tests and release builder.
 
@@ -93,7 +93,7 @@ The individual runner accepts `--report PATH` to save its actual results as JSON
 | `tests/test_manager_unit.py` | SNMP parsing and Counter64 precision, rates/wraparound, CPU/RAM helpers, CSVs, headless plots, bounded capture duration, and following interval changes. |
 | `tests/test_snmp_agent.py` | Real SNMPv1/v2c GET/WALK/GETBULK/SET, manager CPU/RAM and traffic capture, access restrictions, system-value persistence, and rollover-compatible data. |
 | `tests/test_runtime_configuration.py` | Executable programs, remote and local/SSH-style CLI edits, hot reload while waiting 120 seconds, persistence across restart, independent counter caches, configuration authorization, and a concurrently running manager adapting to remote changes. |
-| `tests/test_crypto_unit.py` | RSA key generation/configuration, AES-GCM roundtrips, signatures, tamper/replay/wrong-key rejection, and the Shisha/Hookah startup banner. |
+| `tests/test_crypto_unit.py` | RSA key generation/configuration, AES-GCM roundtrips, signatures, tamper/replay/wrong-key rejection, and the colored Hookah startup banner. |
 | `tests/test_encrypted_integration.py` | Encrypted SNMPv1/v2c GET/WALK/SET, synchronized capture, remote configuration, wire inspection, plaintext rejection, and service-loop shutdown. |
 | `tests/test_windows_service_unit.py` | Mocked native Windows service installation/lifecycle, registry configuration, paths with spaces, rotating logs, and Windows interface-data compatibility. |
 | `tests/test_extended_mib.py` | Shared tree/catalog integrity, descriptive help, disk/process/address/connection/swap/sensor/service collectors, gauges versus counters, and readable unit conversion. |

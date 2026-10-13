@@ -1,4 +1,4 @@
-# Hookah 1.0.0
+# Hookah 1.0.0-2
 
 Hookah monitors Linux and Windows hosts with an **Agent** on the monitored device
 and a **Manager** on the monitoring machine. The Manager reads SNMP metrics,
@@ -11,11 +11,11 @@ Choose the package for your application and operating system:
 
 | File in `dist/` | Public launcher |
 | --- | --- |
-| `Hookah-Agent-Linux-1.0.0.zip` | `Hookah-Agent.sh` |
-| `Hookah-Agent-Windows-1.0.0.zip` | `Hookah-Agent.exe` |
-| `Hookah-Manager-Linux-1.0.0.zip` | `Hookah-Manager.sh` |
-| `Hookah-Manager-Windows-1.0.0.zip` | `Hookah-Manager.exe` |
-| `Hookah-1.0.0.zip` | Both applications, grouped into `Agent/Linux`, `Agent/Windows`, `Manager/Linux`, and `Manager/Windows`. |
+| `Hookah-Agent-Linux-1.0.0-2.zip` | `Hookah-Agent.sh` |
+| `Hookah-Agent-Windows-1.0.0-2.zip` | `Hookah-Agent.exe` |
+| `Hookah-Manager-Linux-1.0.0-2.zip` | `Hookah-Manager.sh` |
+| `Hookah-Manager-Windows-1.0.0-2.zip` | `Hookah-Manager.exe` |
+| `Hookah-1.0.0-2.zip` | Both applications, grouped into `Agent/Linux`, `Agent/Windows`, `Manager/Linux`, and `Manager/Windows`. |
 
 Each component ZIP exposes exactly **four files**:
 
@@ -55,7 +55,7 @@ verification command, and `--snmp-bin` can select existing external Net-SNMP too
   [MIB](MIB.md), [encryption](ENCRYPTION.md), and [testing](TESTING.md).
 
 The combined release includes the developer project and tests inside
-`Hookah-1.0.0/.hookah/source/` and verification results in `.hookah/metadata/`.
+`Hookah-1.0.0-2/.hookah/source/` and verification results in `.hookah/metadata/`.
 
 ## Build a verified release
 

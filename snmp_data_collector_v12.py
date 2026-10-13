@@ -6,14 +6,14 @@ r"""
  \ \_\ \_\  \ \_____\  \ \_____\  \ \_\ \_\  \ \_\ \_\  \ \_\ \_\
   \/_/\/_/   \/_____/   \/_____/   \/_/\/_/   \/_/\/_/   \/_/\/_/
 
-Welcome to Hookah v1.0.1-1
-if you use this, consider making friends.
+Welcome to [1;33mHookah[0m v1.0.0-2
+[2mif you use this, consider making friends.[0m
 
- Monitor CPU, memory, and network traffic with SNMP GET/WALK/SET.
- Capture live metrics, export CSVs, and plot or compare sessions.
- Optional RSA-encrypted communication with your local devices.
+ [96mMonitor CPU, memory, and network traffic with SNMP GET/WALK/SET.[0m
+ [95mCapture live metrics, export CSVs, and plot or compare sessions.[0m
+ [94mOptional RSA-encrypted communication with your local devices.[0m
 
- Made by 0moorii
+ [1;32mMade by 0moorii[0m
 
 SNMP Data Collector and Plotter
 --------------------------------

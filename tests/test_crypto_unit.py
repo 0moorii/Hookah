@@ -11,6 +11,7 @@ from pathlib import Path
 import snmp_agent as agent
 import snmp_crypto as crypto
 import snmp_data_collector_v12 as manager
+from hookah_version import __version__
 
 
 class EncryptionTests(unittest.TestCase):
@@ -137,15 +138,16 @@ class KeyAndConfigurationTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 crypto.EncryptionSettings.from_document(invalid)
 
-    def test_manager_key_command_prints_shisha_with_hookah_below(self):
+    def test_manager_key_command_prints_colored_hookah_banner(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             result = manager.main(["--banner", "keys", "generate", "--directory", str(self.path / "manager"), "--bits", "2048"])
         self.assertEqual(result, 0)
         text = output.getvalue()
-        self.assertIn("::::", text)
-        self.assertIn("Hookah", text)
+        self.assertTrue(text.startswith(manager.HOOKAH_BANNER + "\n\n"))
+        self.assertIn(f"Welcome to \x1b[1;33mHookah\x1b[0m v{__version__}", text)
         self.assertNotIn("WELCOME", text)
-        self.assertLess(text.index("::::"), text.index("Hookah"))
-        self.assertIn("Made by 0moorii", text)
+        self.assertIn("\x1b[1;32mMade by 0moorii\x1b[0m", text)
+        self.assertLess(text.index("Welcome to"), text.index("Made by 0moorii"))
+        self.assertLess(text.index("Made by 0moorii"), text.index("private_key:"))
         self.assertTrue((self.path / "manager" / "manager_private.pem").exists())

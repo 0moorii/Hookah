@@ -1,2 +1,0 @@
--r requirements-agent.txt
-pywin32>=308; sys_platform == "win32"

@@ -1,10 +1,10 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.0-2",
   "native_windows_execution": false,
   "windows_launcher_runner": "wine",
   "bundled_runtime": true,
   "unit": {
-    "version": "1.0.0",
+    "version": "1.0.0-2",
     "suite": "unit",
     "status": "passed",
     "tests_run": 144,
@@ -16,7 +16,7 @@
     "windows_launcher_runner": "wine"
   },
   "integration": {
-    "version": "1.0.0",
+    "version": "1.0.0-2",
     "suite": "integration",
     "status": "passed",
     "tests_run": 44,
@@ -28,7 +28,7 @@
     "windows_launcher_runner": "wine"
   },
   "smoke": {
-    "version": "1.0.0",
+    "version": "1.0.0-2",
     "suite": "smoke",
     "platform": "linux",
     "python": "3.12.3",

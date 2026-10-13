@@ -1,6 +1,6 @@
 # Hookah Agent on Windows 10/11 x64
 
-Extract `Hookah-Agent-Windows-1.0.0.zip` into its own directory. The visible files
+Extract `Hookah-Agent-Windows-1.0.0-2.zip` into its own directory. The visible files
 are **Hookah-Agent.exe**, **README.md**, **HELP.md**, and **config.json**. Python
 code, dependency lists, service integration, and detailed documentation live
 under the hidden `.hookah/` support tree.

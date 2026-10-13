@@ -1,4 +1,4 @@
-# Hookah release 1.0.0
+# Hookah release 1.0.0-2
 
 ## Clean, grouped distributions
 
@@ -22,16 +22,16 @@ ZIP attributes and is marked hidden by the Windows executable.
 ## Artifacts
 
 ```text
-Hookah-Agent-Linux-1.0.0.zip
-Hookah-Agent-Windows-1.0.0.zip
-Hookah-Manager-Linux-1.0.0.zip
-Hookah-Manager-Windows-1.0.0.zip
-Hookah-1.0.0.zip
+Hookah-Agent-Linux-1.0.0-2.zip
+Hookah-Agent-Windows-1.0.0-2.zip
+Hookah-Manager-Linux-1.0.0-2.zip
+Hookah-Manager-Windows-1.0.0-2.zip
+Hookah-1.0.0-2.zip
 SHA256SUMS
 VALIDATION.json
 ```
 
-The previous `Hookah-Agent-1.0.0.zip`, `Hookah-Manager-1.0.0.zip`, and
+The previous `Hookah-Agent-1.0.0-2.zip`, `Hookah-Manager-1.0.0-2.zip`, and
 `Hookah-Agent-Windows.zip` names are refreshed Windows-package aliases.
 The combined ZIP groups ready-to-run folders as `Agent/Linux`, `Agent/Windows`,
 `Manager/Linux`, and `Manager/Windows`. Source/tests are under `.hookah/source/`

@@ -1,9 +1,9 @@
-# Hookah Manager 1.0.0
+# Hookah Manager 1.0.0-2
 
 ## Packaged CLI entrypoints
 
-End-user ZIPs are `Hookah-Manager-Linux-1.0.0.zip` and
-`Hookah-Manager-Windows-1.0.0.zip`. They expose only `Hookah-Manager.sh` or
+End-user ZIPs are `Hookah-Manager-Linux-1.0.0-2.zip` and
+`Hookah-Manager-Windows-1.0.0-2.zip`. They expose only `Hookah-Manager.sh` or
 `Hookah-Manager.exe`, `README.md`, `HELP.md`, and `config.json`; supporting files
 are grouped under `.hookah/`. Run the public launcher directly, then use
 the same launcher for all commands. Python, plotting/encryption libraries, and
@@ -30,7 +30,7 @@ no separate installation on x86-64 glibc Linux (glibc 2.28+).
 | Arch Linux | `sudo pacman -S python net-snmp` |
 | openSUSE | `sudo zypper install python3 net-snmp` |
 
-Extract `Hookah-Manager-Linux-1.0.0.zip`, enter the extracted directory, then:
+Extract `Hookah-Manager-Linux-1.0.0-2.zip`, enter the extracted directory, then:
 
 ```bash
 chmod +x Hookah-Manager.sh
